@@ -1,8 +1,8 @@
 [gd_scene load_steps=21 format=3 uid="uid://cc1m2a1obsyn4"]
 
-[ext_resource type="Script" path="res://3rd_party_packages/addons/fpc/character.gd" id="1_0t4e8"]
-[ext_resource type="Script" path="res://3rd_party_packages/addons/fpc/EditorModule.gd" id="3_v3ckk"]
-[ext_resource type="Script" path="res://3rd_party_packages/addons/fpc/debug.gd" id="3_x1wcc"]
+[ext_resource type="Script" path="res://addons/fpc/character.gd" id="1_0t4e8"]
+[ext_resource type="Script" path="res://addons/fpc/EditorModule.gd" id="3_v3ckk"]
+[ext_resource type="Script" path="res://addons/fpc/debug.gd" id="3_x1wcc"]
 
 [sub_resource type="StandardMaterial3D" id="StandardMaterial3D_kp17n"]
 albedo_color = Color(0.909804, 0.596078, 0, 1)
@@ -353,7 +353,7 @@ MarginContainer/constants/margin_top = 10
 
 [node name="Character" type="CharacterBody3D" node_paths=PackedStringArray("HEAD", "CAMERA", "HEADBOB_ANIMATION", "JUMP_ANIMATION", "CROUCH_ANIMATION", "COLLISION_MESH")]
 script = ExtResource("1_0t4e8")
-default_reticle = "res://3rd_party_packages/addons/fpc/reticles/reticle_1.tscn"
+default_reticle = "res://addons/fpc/reticles/reticle_1.tscn"
 HEAD = NodePath("Head")
 CAMERA = NodePath("Head/Camera")
 HEADBOB_ANIMATION = NodePath("Head/HeadbobAnimation")
