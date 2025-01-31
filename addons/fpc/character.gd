@@ -6,6 +6,7 @@
 
 extends CharacterBody3D
 
+@onready var camera = $Head/Camera
 
 ## The settings for the character's movement and feel.
 @export_category("Character")
@@ -101,22 +102,24 @@ var mouseInput : Vector2 = Vector2(0,0)
 
 func _ready():
 	#It is safe to comment this line if your game doesn't start with the mouse captured
-	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
-	
-	# If the controller is rotated in a certain direction for game design purposes, redirect this rotation into the head.
-	HEAD.rotation.y = rotation.y
-	rotation.y = 0
-	
-	if default_reticle:
-		change_reticle(default_reticle)
-	
-	# Reset the camera position
-	# If you want to change the default head height, change these animations.
-	HEADBOB_ANIMATION.play("RESET")
-	JUMP_ANIMATION.play("RESET")
-	CROUCH_ANIMATION.play("RESET")
-	
-	check_controls()
+	if is_multiplayer_authority():
+		camera.enabled = true
+		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+		
+		# If the controller is rotated in a certain direction for game design purposes, redirect this rotation into the head.
+		HEAD.rotation.y = rotation.y
+		rotation.y = 0
+		
+		if default_reticle:
+			change_reticle(default_reticle)
+		
+		# Reset the camera position
+		# If you want to change the default head height, change these animations.
+		HEADBOB_ANIMATION.play("RESET")
+		JUMP_ANIMATION.play("RESET")
+		CROUCH_ANIMATION.play("RESET")
+		
+		check_controls()
 
 func check_controls(): # If you add a control, you might want to add a check for it here.
 	# The actions are being disabled so the engine doesn't halt the entire project in debug mode
@@ -156,6 +159,8 @@ func change_reticle(reticle): # Yup, this function is kinda strange
 
 
 func _physics_process(delta):
+	if !is_multiplayer_authority():
+		return
 	# Big thanks to github.com/LorenzoAncora for the concept of the improved debug values
 	current_speed = Vector3.ZERO.distance_to(get_real_velocity())
 	$UserInterface/DebugPanel.add_property("Speed", snappedf(current_speed, 0.001), 1)
