@@ -6,7 +6,7 @@
 
 extends CharacterBody3D
 
-@onready var camera = $Head/Camera
+@onready var camera: Camera3D= $Head/Camera
 
 ## The settings for the character's movement and feel.
 @export_category("Character")
@@ -103,7 +103,7 @@ var mouseInput : Vector2 = Vector2(0,0)
 func _ready():
 	#It is safe to comment this line if your game doesn't start with the mouse captured
 	if is_multiplayer_authority():
-		camera.enabled = true
+		camera.make_current()
 		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 		
 		# If the controller is rotated in a certain direction for game design purposes, redirect this rotation into the head.
