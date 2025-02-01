@@ -44,18 +44,42 @@ func join_lobby(id):
 func open_lobby_list():
 	Steam.addRequestLobbyListDistanceFilter(Steam.LOBBY_DISTANCE_FILTER_WORLDWIDE)
 	Steam.requestLobbyList()
-	
+
+
+
+
 func _on_lobby_match_list(lobbies):
 	
-	for lobby in lobbies:
-		var lobby_name = Steam.getLobbyData(lobby, "name")
-		var mem_count = Steam.getNumLobbyMembers(lobby)
+	for i in range(0, Steam.getFriendCount()):
+		var friend_steam_id: int = Steam.getFriendByIndex(i, Steam.FRIEND_FLAG_IMMEDIATE)
+		var game_info: Dictionary = Steam.getFriendGamePlayed(friend_steam_id)
 		
-		var button = Button.new()
-		button.set_text(str(lobby_name, " | Player Count: ", mem_count))
-		button.set_size(Vector2(100,5))
-		button.pressed.connect(join_lobby.bind(lobby))
-		$LobbyContainer/LobbyList.add_child(button)
+		if game_info.is_empty():
+			continue
+		else:
+			var app_id: int = game_info['id']
+			var lobby = game_info['lobby']
+			
+			if app_id == Steam.getAppID():
+				var lobby_name = Steam.getLobbyData(lobby, "name")
+				var mem_count = Steam.getNumLobbyMembers(lobby)
+				
+				var button = Button.new()
+				button.set_text(str(lobby_name, " | Player Count: ", mem_count))
+				button.set_size(Vector2(100,5))
+				button.pressed.connect(join_lobby.bind(lobby))
+				$LobbyContainer/LobbyList.add_child(button)
+		
+	
+	#for lobby in lobbies:
+		#var lobby_name = Steam.getLobbyData(lobby, "name")
+		#var mem_count = Steam.getNumLobbyMembers(lobby)
+		#
+		#var button = Button.new()
+		#button.set_text(str(lobby_name, " | Player Count: ", mem_count))
+		#button.set_size(Vector2(100,5))
+		#button.pressed.connect(join_lobby.bind(lobby))
+		#$LobbyContainer/LobbyList.add_child(button)
 	
 
 
