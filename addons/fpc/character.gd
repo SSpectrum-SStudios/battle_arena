@@ -224,7 +224,7 @@ func handle_jumping():
 
 
 func handle_movement(delta, input_dir):
-	var direction = input_dir.rotated(-HEAD.rotation.y)
+	var direction = input_dir.rotated(-self.rotation.y)
 	direction = Vector3(direction.x, 0, direction.y)
 	move_and_slide()
 	
@@ -245,23 +245,32 @@ func handle_movement(delta, input_dir):
 			velocity.z = direction.z * speed
 
 func handle_head_rotation():
-	HEAD.rotation_degrees.y -= mouseInput.x * mouse_sensitivity
-	if invert_mouse_y:
-		HEAD.rotation_degrees.x -= mouseInput.y * mouse_sensitivity * -1.0
-	else:
-		HEAD.rotation_degrees.x -= mouseInput.y * mouse_sensitivity
-	
-	# Uncomment for controller support
-	#var controller_view_rotation = Input.get_vector(LOOK_DOWN, LOOK_UP, LOOK_RIGHT, LOOK_LEFT) * controller_sensitivity # These are inverted because of the nature of 3D rotation.
-	#HEAD.rotation.x += controller_view_rotation.x
+	#HEAD.rotation_degrees.y -= mouseInput.x * mouse_sensitivity
 	#if invert_mouse_y:
-		#HEAD.rotation.y += controller_view_rotation.y * -1.0
+		#HEAD.rotation_degrees.x -= mouseInput.y * mouse_sensitivity * -1.0
 	#else:
-		#HEAD.rotation.y += controller_view_rotation.y
+		#HEAD.rotation_degrees.x -= mouseInput.y * mouse_sensitivity
+	#
+	## Uncomment for controller support
+	##var controller_view_rotation = Input.get_vector(LOOK_DOWN, LOOK_UP, LOOK_RIGHT, LOOK_LEFT) * controller_sensitivity # These are inverted because of the nature of 3D rotation.
+	##HEAD.rotation.x += controller_view_rotation.x
+	##if invert_mouse_y:
+		##HEAD.rotation.y += controller_view_rotation.y * -1.0
+	##else:
+		##HEAD.rotation.y += controller_view_rotation.y
+		#
+	#mouseInput = Vector2(0,0)
+	#HEAD.rotation.x = clamp(HEAD.rotation.x, deg_to_rad(-90), deg_to_rad(90))
+		
+	self.rotation_degrees.y -= mouseInput.x * mouse_sensitivity
+	if invert_mouse_y:
+		self.rotation_degrees.x -= mouseInput.y * mouse_sensitivity * -1.0
+	else:
+		self.rotation_degrees.x -= mouseInput.y * mouse_sensitivity
 	
 	
 	mouseInput = Vector2(0,0)
-	HEAD.rotation.x = clamp(HEAD.rotation.x, deg_to_rad(-90), deg_to_rad(90))
+	HEAD.rotation.x = clamp(self.rotation.x, deg_to_rad(-90), deg_to_rad(90))
 
 
 func handle_state(moving):

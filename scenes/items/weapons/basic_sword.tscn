@@ -1,0 +1,15 @@
+[gd_scene load_steps=3 format=3 uid="uid://cjb4gcocabkal"]
+
+[ext_resource type="ArrayMesh" uid="uid://ckfypdwpma21m" path="res://models/items/weapons/model.obj" id="1_dabtb"]
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_jm035"]
+size = Vector3(0.164124, 1.24054, 0.175537)
+
+[node name="Model" type="MeshInstance3D"]
+mesh = ExtResource("1_dabtb")
+
+[node name="Area3D" type="Area3D" parent="."]
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="Area3D"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 9.15601e-05, 0.613434, 0.00329591)
+shape = SubResource("BoxShape3D_jm035")
