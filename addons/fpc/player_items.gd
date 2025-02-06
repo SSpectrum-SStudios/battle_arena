@@ -10,8 +10,9 @@ func _ready() -> void:
 	hand.add_child(weapon1)
 
 func _process(delta: float) -> void:
-	if Input.is_action_just_pressed("attack"):
-		attack_animation_player.play("swing")
+	if is_multiplayer_authority():
+		if Input.is_action_just_pressed("attack"):
+			attack_animation_player.play("swing")
 
 
 func _on_weapon_animation_animation_finished(anim_name: StringName) -> void:

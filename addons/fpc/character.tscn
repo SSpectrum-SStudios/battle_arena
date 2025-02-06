@@ -360,6 +360,12 @@ properties/0/replication_mode = 1
 properties/1/path = NodePath(".:rotation")
 properties/1/spawn = true
 properties/1/replication_mode = 1
+properties/2/path = NodePath("Items/HandPivot/Hand:position")
+properties/2/spawn = true
+properties/2/replication_mode = 1
+properties/3/path = NodePath("Items/HandPivot/Hand:rotation")
+properties/3/spawn = true
+properties/3/replication_mode = 1
 
 [sub_resource type="Animation" id="Animation_5v4q2"]
 length = 0.001
@@ -538,7 +544,7 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.986499, 0)
 
 [node name="Hand" type="Marker3D" parent="Items/HandPivot"]
 unique_name_in_owner = true
-transform = Transform3D(0.807882, 0.525317, -0.267147, -0.261453, 0.725716, 0.63638, 0.528174, -0.444273, 0.723639, 0.627729, 0.0132158, -1.02306)
+transform = Transform3D(0.807882, 0.525317, -0.267148, -0.261453, 0.725716, 0.63638, 0.528174, -0.444274, 0.723639, 0.627729, 0.0132158, -1.02306)
 gizmo_extents = 1.32
 
 [connection signal="animation_finished" from="Items/WeaponAnimation" to="Items" method="_on_weapon_animation_animation_finished"]
