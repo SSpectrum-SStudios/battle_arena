@@ -102,24 +102,25 @@ var mouseInput : Vector2 = Vector2(0,0)
 
 func _ready():
 	#It is safe to comment this line if your game doesn't start with the mouse captured
-	if is_multiplayer_authority():
-		camera.make_current()
-		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
-		
-		# If the controller is rotated in a certain direction for game design purposes, redirect this rotation into the head.
-		HEAD.rotation.y = rotation.y
-		rotation.y = 0
-		
-		if default_reticle:
-			change_reticle(default_reticle)
-		
-		# Reset the camera position
-		# If you want to change the default head height, change these animations.
-		HEADBOB_ANIMATION.play("RESET")
-		JUMP_ANIMATION.play("RESET")
-		CROUCH_ANIMATION.play("RESET")
-		
-		check_controls()
+	if !is_multiplayer_authority():
+		return
+	camera.make_current()
+	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+	
+	# If the controller is rotated in a certain direction for game design purposes, redirect this rotation into the head.
+	HEAD.rotation.y = rotation.y
+	rotation.y = 0
+	
+	if default_reticle:
+		change_reticle(default_reticle)
+	
+	# Reset the camera position
+	# If you want to change the default head height, change these animations.
+	HEADBOB_ANIMATION.play("RESET")
+	JUMP_ANIMATION.play("RESET")
+	CROUCH_ANIMATION.play("RESET")
+	
+	check_controls()
 
 func check_controls(): # If you add a control, you might want to add a check for it here.
 	# The actions are being disabled so the engine doesn't halt the entire project in debug mode
@@ -224,7 +225,7 @@ func handle_jumping():
 
 
 func handle_movement(delta, input_dir):
-	var direction = input_dir.rotated(-self.rotation.y)
+	var direction = input_dir.rotated(-HEAD.rotation.y)
 	direction = Vector3(direction.x, 0, direction.y)
 	move_and_slide()
 	
@@ -245,32 +246,23 @@ func handle_movement(delta, input_dir):
 			velocity.z = direction.z * speed
 
 func handle_head_rotation():
-	#HEAD.rotation_degrees.y -= mouseInput.x * mouse_sensitivity
-	#if invert_mouse_y:
-		#HEAD.rotation_degrees.x -= mouseInput.y * mouse_sensitivity * -1.0
-	#else:
-		#HEAD.rotation_degrees.x -= mouseInput.y * mouse_sensitivity
-	#
-	## Uncomment for controller support
-	##var controller_view_rotation = Input.get_vector(LOOK_DOWN, LOOK_UP, LOOK_RIGHT, LOOK_LEFT) * controller_sensitivity # These are inverted because of the nature of 3D rotation.
-	##HEAD.rotation.x += controller_view_rotation.x
-	##if invert_mouse_y:
-		##HEAD.rotation.y += controller_view_rotation.y * -1.0
-	##else:
-		##HEAD.rotation.y += controller_view_rotation.y
-		#
-	#mouseInput = Vector2(0,0)
-	#HEAD.rotation.x = clamp(HEAD.rotation.x, deg_to_rad(-90), deg_to_rad(90))
-		
-	self.rotation_degrees.y -= mouseInput.x * mouse_sensitivity
+	HEAD.rotation_degrees.y -= mouseInput.x * mouse_sensitivity
 	if invert_mouse_y:
-		self.rotation_degrees.x -= mouseInput.y * mouse_sensitivity * -1.0
+		HEAD.rotation_degrees.x -= mouseInput.y * mouse_sensitivity * -1.0
 	else:
-		self.rotation_degrees.x -= mouseInput.y * mouse_sensitivity
+		HEAD.rotation_degrees.x -= mouseInput.y * mouse_sensitivity
 	
-	
+	# Uncomment for controller support
+	#var controller_view_rotation = Input.get_vector(LOOK_DOWN, LOOK_UP, LOOK_RIGHT, LOOK_LEFT) * controller_sensitivity # These are inverted because of the nature of 3D rotation.
+	#HEAD.rotation.x += controller_view_rotation.x
+	#if invert_mouse_y:
+		#HEAD.rotation.y += controller_view_rotation.y * -1.0
+	#else:
+		#HEAD.rotation.y += controller_view_rotation.y
+		
 	mouseInput = Vector2(0,0)
-	HEAD.rotation.x = clamp(self.rotation.x, deg_to_rad(-90), deg_to_rad(90))
+	HEAD.rotation.x = clamp(HEAD.rotation.x, deg_to_rad(-90), deg_to_rad(90))
+		
 
 
 func handle_state(moving):
@@ -378,6 +370,8 @@ func headbob_animation(moving):
 
 
 func _process(delta):
+	if !is_multiplayer_authority():
+		return
 	$UserInterface/DebugPanel.add_property("FPS", Performance.get_monitor(Performance.TIME_FPS), 0)
 	var status : String = state
 	if !is_on_floor():
