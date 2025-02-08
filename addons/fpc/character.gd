@@ -104,6 +104,7 @@ func _ready():
 	#It is safe to comment this line if your game doesn't start with the mouse captured
 	if !is_multiplayer_authority():
 		return
+	self.global_position = Vector3(0,5,0)
 	camera.make_current()
 	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 	
