@@ -1,6 +1,7 @@
-[gd_scene load_steps=27 format=3 uid="uid://cc1m2a1obsyn4"]
+[gd_scene load_steps=28 format=3 uid="uid://cc1m2a1obsyn4"]
 
 [ext_resource type="Script" path="res://addons/fpc/character.gd" id="1_0t4e8"]
+[ext_resource type="Script" path="res://scripts/damage_controller.gd" id="2_pvak0"]
 [ext_resource type="Script" path="res://addons/fpc/EditorModule.gd" id="3_v3ckk"]
 [ext_resource type="Script" path="res://addons/fpc/debug.gd" id="3_x1wcc"]
 [ext_resource type="Script" path="res://addons/fpc/player_items.gd" id="4_irax4"]
@@ -499,21 +500,23 @@ libraries = {
 }
 speed_scale = 4.0
 
-[node name="Items" type="Node3D" parent="Head"]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -1.5, 0)
+[node name="DamageController" type="Node3D" parent="Head"]
+script = ExtResource("2_pvak0")
+
+[node name="Items" type="Node3D" parent="Head/DamageController"]
+unique_name_in_owner = true
 script = ExtResource("4_irax4")
 weapon = ExtResource("5_ui83s")
 
-[node name="WeaponAnimation" type="AnimationPlayer" parent="Head/Items"]
+[node name="WeaponAnimation" type="AnimationPlayer" parent="Head/DamageController/Items"]
 unique_name_in_owner = true
 libraries = {
 "": SubResource("AnimationLibrary_qlai7")
 }
 
-[node name="HandPivot" type="Node3D" parent="Head/Items"]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.986499, 0)
+[node name="HandPivot" type="Node3D" parent="Head/DamageController/Items"]
 
-[node name="Hand" type="Marker3D" parent="Head/Items/HandPivot"]
+[node name="Hand" type="Marker3D" parent="Head/DamageController/Items/HandPivot"]
 unique_name_in_owner = true
 transform = Transform3D(0.807882, 0.525317, -0.267148, -0.261453, 0.725716, 0.63638, 0.528174, -0.444274, 0.723639, 0.627729, 0.0132158, -1.02306)
 gizmo_extents = 1.32
@@ -554,4 +557,4 @@ script = ExtResource("3_v3ckk")
 [node name="MultiplayerSynchronizer" type="MultiplayerSynchronizer" parent="."]
 replication_config = SubResource("SceneReplicationConfig_iqbda")
 
-[connection signal="animation_finished" from="Head/Items/WeaponAnimation" to="Head/Items" method="_on_weapon_animation_animation_finished"]
+[connection signal="animation_finished" from="Head/DamageController/Items/WeaponAnimation" to="Head/DamageController/Items" method="_on_weapon_animation_animation_finished"]

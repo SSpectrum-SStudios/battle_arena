@@ -1,6 +1,7 @@
-[gd_scene load_steps=3 format=3 uid="uid://cjb4gcocabkal"]
+[gd_scene load_steps=4 format=3 uid="uid://cjb4gcocabkal"]
 
 [ext_resource type="ArrayMesh" uid="uid://ckfypdwpma21m" path="res://models/items/weapons/model.obj" id="1_dabtb"]
+[ext_resource type="PackedScene" uid="uid://cvx5nhcif18qf" path="res://scenes/components/DoesDamage.tscn" id="2_4gbkv"]
 
 [sub_resource type="BoxShape3D" id="BoxShape3D_jm035"]
 size = Vector3(0.164124, 1.24054, 0.175537)
@@ -8,8 +9,8 @@ size = Vector3(0.164124, 1.24054, 0.175537)
 [node name="Model" type="MeshInstance3D"]
 mesh = ExtResource("1_dabtb")
 
-[node name="Area3D" type="Area3D" parent="."]
+[node name="DoesDamage" parent="." instance=ExtResource("2_4gbkv")]
 
-[node name="CollisionShape3D" type="CollisionShape3D" parent="Area3D"]
+[node name="CollisionShape3D" type="CollisionShape3D" parent="DoesDamage"]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 9.15601e-05, 0.613434, 0.00329591)
 shape = SubResource("BoxShape3D_jm035")
