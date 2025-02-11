@@ -102,24 +102,26 @@ var mouseInput : Vector2 = Vector2(0,0)
 
 func _ready():
 	#It is safe to comment this line if your game doesn't start with the mouse captured
-	if is_multiplayer_authority():
-		camera.make_current()
-		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
-		
-		# If the controller is rotated in a certain direction for game design purposes, redirect this rotation into the head.
-		HEAD.rotation.y = rotation.y
-		rotation.y = 0
-		
-		if default_reticle:
-			change_reticle(default_reticle)
-		
-		# Reset the camera position
-		# If you want to change the default head height, change these animations.
-		HEADBOB_ANIMATION.play("RESET")
-		JUMP_ANIMATION.play("RESET")
-		CROUCH_ANIMATION.play("RESET")
-		
-		check_controls()
+	if !is_multiplayer_authority():
+		return
+	self.global_position = Vector3(0,5,0)
+	camera.make_current()
+	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+	
+	# If the controller is rotated in a certain direction for game design purposes, redirect this rotation into the head.
+	HEAD.rotation.y = rotation.y
+	rotation.y = 0
+	
+	if default_reticle:
+		change_reticle(default_reticle)
+	
+	# Reset the camera position
+	# If you want to change the default head height, change these animations.
+	HEADBOB_ANIMATION.play("RESET")
+	JUMP_ANIMATION.play("RESET")
+	CROUCH_ANIMATION.play("RESET")
+	
+	check_controls()
 
 func check_controls(): # If you add a control, you might want to add a check for it here.
 	# The actions are being disabled so the engine doesn't halt the entire project in debug mode
@@ -258,10 +260,10 @@ func handle_head_rotation():
 		#HEAD.rotation.y += controller_view_rotation.y * -1.0
 	#else:
 		#HEAD.rotation.y += controller_view_rotation.y
-	
-	
+		
 	mouseInput = Vector2(0,0)
 	HEAD.rotation.x = clamp(HEAD.rotation.x, deg_to_rad(-90), deg_to_rad(90))
+		
 
 
 func handle_state(moving):
@@ -369,6 +371,8 @@ func headbob_animation(moving):
 
 
 func _process(delta):
+	if !is_multiplayer_authority():
+		return
 	$UserInterface/DebugPanel.add_property("FPS", Performance.get_monitor(Performance.TIME_FPS), 0)
 	var status : String = state
 	if !is_on_floor():
