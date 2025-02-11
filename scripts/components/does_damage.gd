@@ -3,7 +3,7 @@ class_name DoesDamage
 
 signal entered_hittable(hittable: Hittable, damage_list)
 
-@export var damages: Array[String]
+@export var damages: Array[Damage]
 
 func _on_area_entered(area: Area3D) -> void:
 	if area is Hittable:

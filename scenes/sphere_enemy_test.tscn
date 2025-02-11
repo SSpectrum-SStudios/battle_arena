@@ -1,0 +1,29 @@
+[gd_scene load_steps=6 format=3 uid="uid://c83vr3lx66x4c"]
+
+[ext_resource type="Script" path="res://scripts/components/hittable.gd" id="1_03mhn"]
+[ext_resource type="Script" path="res://scripts/sphere_enemy_test.gd" id="1_dntt3"]
+[ext_resource type="PackedScene" uid="uid://b5kyjblko1jju" path="res://scenes/components/HealthComponent.tscn" id="3_bl228"]
+
+[sub_resource type="SphereShape3D" id="SphereShape3D_cgp4d"]
+
+[sub_resource type="SphereMesh" id="SphereMesh_idg8v"]
+
+[node name="SphereEnemy" type="Node3D"]
+script = ExtResource("1_dntt3")
+
+[node name="DoesDamage" type="Area3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.37082, 0)
+script = ExtResource("1_03mhn")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="DoesDamage"]
+shape = SubResource("SphereShape3D_cgp4d")
+
+[node name="MeshInstance3D" type="MeshInstance3D" parent="DoesDamage"]
+mesh = SubResource("SphereMesh_idg8v")
+
+[node name="HealthComponent" parent="." instance=ExtResource("3_bl228")]
+unique_name_in_owner = true
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.37082, 0)
+max_health = 200.0
+
+[connection signal="take_hit" from="DoesDamage" to="." method="_on_does_damage_take_hit"]
