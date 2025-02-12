@@ -1,7 +1,7 @@
 extends Area3D
 class_name DoesDamage
 
-signal entered_hittable(hittable: Hittable, damage_list)
+signal entered_hittable(hittable: Hittable, damage_list: Array[Damage])
 
 @export var damages: Array[Damage]
 

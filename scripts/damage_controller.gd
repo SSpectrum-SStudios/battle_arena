@@ -9,5 +9,4 @@ func _ready() -> void:
 		weapon.entered_hittable.connect(_on_damage_dealt)
 		
 func _on_damage_dealt(hittable: Hittable, damage_list):
-	
 	hittable.hit(damage_list)

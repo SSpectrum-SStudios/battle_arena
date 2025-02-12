@@ -1,0 +1,30 @@
+[gd_scene load_steps=9 format=3 uid="uid://cjb4gcocabkal"]
+
+[ext_resource type="ArrayMesh" uid="uid://ckfypdwpma21m" path="res://models/items/weapons/model.obj" id="1_dabtb"]
+[ext_resource type="PackedScene" uid="uid://cvx5nhcif18qf" path="res://scenes/components/DoesDamage.tscn" id="2_4gbkv"]
+[ext_resource type="Script" path="res://scripts/resources/damage.gd" id="3_cnnoe"]
+[ext_resource type="Script" path="res://scripts/resources/physical_damage.gd" id="4_1g00t"]
+[ext_resource type="Script" path="res://scripts/resources/fire_damage.gd" id="5_udxtj"]
+
+[sub_resource type="Resource" id="Resource_nf11c"]
+script = ExtResource("4_1g00t")
+damage_amount = 50.0
+
+[sub_resource type="Resource" id="Resource_ki0et"]
+script = ExtResource("5_udxtj")
+number_of_ticks = 5
+time_between_ticks = 0.5
+damage_amount = 10.0
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_jm035"]
+size = Vector3(0.164124, 1.24054, 0.175537)
+
+[node name="Model" type="MeshInstance3D"]
+mesh = ExtResource("1_dabtb")
+
+[node name="DoesDamage" parent="." instance=ExtResource("2_4gbkv")]
+damages = Array[ExtResource("3_cnnoe")]([SubResource("Resource_nf11c"), SubResource("Resource_ki0et")])
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="DoesDamage"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 9.15601e-05, 0.613434, 0.00329591)
+shape = SubResource("BoxShape3D_jm035")

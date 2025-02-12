@@ -7,6 +7,7 @@ var current_number_ticks: int
 var current_health_component: HealthComponent
 var fire_damage_timer: Timer
 
+
 func damage_func(health_component: HealthComponent):
 	current_health_component = health_component
 	current_number_ticks = number_of_ticks
@@ -28,9 +29,9 @@ func tick_fire_damage():
 	current_number_ticks -= 1
 	
 	if current_number_ticks <= 0:
-		fire_damage_timer.stop()
-		fire_damage_timer.queue_free()
-	
+		if fire_damage_timer:
+			fire_damage_timer.stop()
+			fire_damage_timer.queue_free()	
 	
 	
 	

@@ -11,14 +11,14 @@
 [node name="SphereEnemy" type="Node3D"]
 script = ExtResource("1_dntt3")
 
-[node name="DoesDamage" type="Area3D" parent="."]
+[node name="Hittable" type="Area3D" parent="."]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.37082, 0)
 script = ExtResource("1_03mhn")
 
-[node name="CollisionShape3D" type="CollisionShape3D" parent="DoesDamage"]
+[node name="CollisionShape3D" type="CollisionShape3D" parent="Hittable"]
 shape = SubResource("SphereShape3D_cgp4d")
 
-[node name="MeshInstance3D" type="MeshInstance3D" parent="DoesDamage"]
+[node name="MeshInstance3D" type="MeshInstance3D" parent="Hittable"]
 mesh = SubResource("SphereMesh_idg8v")
 
 [node name="HealthComponent" parent="." instance=ExtResource("3_bl228")]
@@ -26,4 +26,5 @@ unique_name_in_owner = true
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.37082, 0)
 max_health = 200.0
 
-[connection signal="take_hit" from="DoesDamage" to="." method="_on_does_damage_take_hit"]
+[connection signal="take_hit" from="Hittable" to="." method="_on_hittable_take_hit"]
+[connection signal="health_at_zero" from="HealthComponent" to="." method="_on_health_component_health_at_zero"]
