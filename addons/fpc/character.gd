@@ -6,7 +6,7 @@
 
 extends CharacterBody3D
 
-@onready var camera: Camera3D= $Head/Camera
+@onready var camera: Camera3D = %Camera
 
 ## The settings for the character's movement and feel.
 @export_category("Character")

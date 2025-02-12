@@ -25,8 +25,7 @@ extends Node
 #@export var JUMP_ANIMATION : AnimationPlayer
 #@export var CROUCH_ANIMATION : AnimationPlayer
 #@export var COLLISION_MESH : CollisionShape3D
-
-@onready var HEAD = get_node("../" + head_path)
+@onready var HEAD: Node3D = %CameraPivot
 
 
 func _ready():
