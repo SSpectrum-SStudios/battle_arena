@@ -1,0 +1,18 @@
+[gd_scene load_steps=5 format=3 uid="uid://cjb4gcocabkal"]
+
+[ext_resource type="ArrayMesh" uid="uid://ckfypdwpma21m" path="res://models/items/weapons/model.obj" id="1_dabtb"]
+[ext_resource type="PackedScene" uid="uid://cvx5nhcif18qf" path="res://scenes/components/AttackComponent.tscn" id="2_4gbkv"]
+[ext_resource type="Script" path="res://scripts/items/Item.gd" id="2_mil44"]
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_jm035"]
+size = Vector3(0.164124, 1.24054, 0.175537)
+
+[node name="BasicSword" type="MeshInstance3D"]
+mesh = ExtResource("1_dabtb")
+script = ExtResource("2_mil44")
+
+[node name="AttackComponent" parent="." instance=ExtResource("2_4gbkv")]
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="AttackComponent"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 9.15601e-05, 0.613434, 0.00329591)
+shape = SubResource("BoxShape3D_jm035")

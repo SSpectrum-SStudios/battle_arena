@@ -1,0 +1,10 @@
+[gd_scene load_steps=2 format=3 uid="uid://cvx5nhcif18qf"]
+
+[ext_resource type="Script" path="res://scripts/components/AttackComponent.gd" id="1_1aesn"]
+
+[node name="DoesDamage" type="Node3D"]
+script = ExtResource("1_1aesn")
+
+[node name="Area3d" type="Area3D" parent="."]
+
+[connection signal="body_entered" from="Area3d" to="." method="_on_area_entered"]

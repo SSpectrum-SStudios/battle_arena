@@ -1,0 +1,8 @@
+[gd_resource type="Resource" script_class="DamageOverTimeModifier" load_steps=2 format=3 uid="uid://cbl80f7icrbx1"]
+
+[ext_resource type="Script" path="res://scripts/resources/modifiers/DamageOverTimeModifier.gd" id="1_87v0n"]
+
+[resource]
+script = ExtResource("1_87v0n")
+number_of_ticks = 5
+time_between_ticks = 0.5

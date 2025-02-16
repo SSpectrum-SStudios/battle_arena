@@ -1,0 +1,8 @@
+[gd_resource type="Resource" script_class="AttackPayloadModifier" load_steps=3 format=3 uid="uid://cdanhbi575myq"]
+
+[ext_resource type="Script" path="res://scripts/resources/modifiers/AttackPayloadModifier.gd" id="1_plese"]
+[ext_resource type="Script" path="res://scripts/resources/modifiers/Modifier.gd" id="1_xxf5k"]
+
+[resource]
+script = ExtResource("1_plese")
+modifiers = Array[ExtResource("1_xxf5k")]([])

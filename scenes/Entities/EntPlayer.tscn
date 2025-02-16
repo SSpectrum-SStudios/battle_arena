@@ -1,0 +1,48 @@
+[gd_scene load_steps=14 format=3 uid="uid://flt0yan8li6v"]
+
+[ext_resource type="Script" path="res://scripts/PlayerController.gd" id="1_mnjil"]
+[ext_resource type="PackedScene" uid="uid://b5kyjblko1jju" path="res://scenes/components/HealthComponent.tscn" id="2_f4vpr"]
+[ext_resource type="PackedScene" uid="uid://cjb4gcocabkal" path="res://scenes/items/weapons/BasicSword.tscn" id="3_7fklq"]
+[ext_resource type="PackedScene" uid="uid://cw65pvypaey0g" path="res://scenes/items/armor/TestArmor.tscn" id="3_u7xob"]
+[ext_resource type="Script" path="res://scripts/resources/modifiers/Modifier.gd" id="5_8aq4e"]
+[ext_resource type="Script" path="res://scripts/resources/Damage.gd" id="6_l8vym"]
+[ext_resource type="Script" path="res://scripts/resources/modifiers/SingleDamageModifier.gd" id="7_7j4yu"]
+[ext_resource type="Script" path="res://scripts/resources/modifiers/AttackPayloadModifier.gd" id="8_5bbwh"]
+[ext_resource type="Script" path="res://scripts/resources/modifiers/PhysicalDamageAugmentModifer.gd" id="9_2gjoq"]
+
+[sub_resource type="Resource" id="Resource_npkg4"]
+script = ExtResource("6_l8vym")
+damage_amount = 50.0
+damage_type = 0
+
+[sub_resource type="Resource" id="Resource_27ysb"]
+script = ExtResource("7_7j4yu")
+damage = SubResource("Resource_npkg4")
+modifiers = Array[ExtResource("5_8aq4e")]([])
+
+[sub_resource type="Resource" id="Resource_ypjae"]
+script = ExtResource("8_5bbwh")
+modifiers = Array[ExtResource("5_8aq4e")]([SubResource("Resource_27ysb")])
+
+[sub_resource type="Resource" id="Resource_71blk"]
+script = ExtResource("9_2gjoq")
+is_augment_multiplier = true
+augment_amount = 2.0
+modifiers = Array[ExtResource("5_8aq4e")]([])
+
+[node name="EntPlayer" type="CharacterBody3D"]
+
+[node name="Player_Controller" type="Node3D" parent="."]
+script = ExtResource("1_mnjil")
+
+[node name="HealthComponent" parent="Player_Controller" instance=ExtResource("2_f4vpr")]
+max_health = 300.0
+
+[node name="HandSlot1" type="Marker3D" parent="Player_Controller"]
+
+[node name="Model" parent="Player_Controller/HandSlot1" instance=ExtResource("3_7fklq")]
+
+[node name="ArmorSlot" type="Marker3D" parent="Player_Controller"]
+
+[node name="TestArmor" parent="Player_Controller/ArmorSlot" instance=ExtResource("3_u7xob")]
+modifiers = Array[ExtResource("5_8aq4e")]([SubResource("Resource_ypjae"), SubResource("Resource_71blk")])

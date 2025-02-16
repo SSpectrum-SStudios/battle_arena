@@ -1,6 +1,6 @@
 [gd_scene load_steps=6 format=3 uid="uid://c83vr3lx66x4c"]
 
-[ext_resource type="Script" path="res://scripts/components/hittable.gd" id="1_03mhn"]
+[ext_resource type="Script" path="res://scripts/components/Hittable.gd" id="1_03mhn"]
 [ext_resource type="Script" path="res://scripts/sphere_enemy_test.gd" id="1_dntt3"]
 [ext_resource type="PackedScene" uid="uid://b5kyjblko1jju" path="res://scenes/components/HealthComponent.tscn" id="3_bl228"]
 

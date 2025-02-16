@@ -1,7 +1,7 @@
 extends Area3D
-class_name Hittable
+class_name IHittable
 
-signal take_hit(damage_list: Array[Damage])
+signal take_hit(attack_payload: AttackPayload)
 
-func hit(damage_list: Array[Damage]):
-	take_hit.emit(damage_list)
+func hit(attack_payload: AttackPayload):
+	take_hit.emit(attack_payload)
