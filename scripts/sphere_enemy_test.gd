@@ -1,12 +1,21 @@
 extends Node3D
 
-@onready var health_component: HealthComponent = %HealthComponent
+@export var components : Array[BaseComponent]
 
-func _on_hittable_take_hit(damage_list: Array[Damage]) -> void:
-	for damage in damage_list:
-		if damage is FireDamage:
-			damage.damage_func(health_component)
-
-
-func _on_health_component_health_at_zero() -> void:
-	pass
+func _ready() -> void:
+	_populate_components(self)
+	
+func _populate_components(node):
+	for N in node.get_children():
+		if N is BaseComponent:
+			components.append(N)
+			if N.has_signal("propagate_modifier"):
+				N.propagate_modifier.connect(_distribute_modifiers)
+		if N.get_child_count() > 0:
+			_populate_components(N)
+			
+func _distribute_modifiers(modifiers: Array[Modifier]):
+	for modifier in modifiers:
+		for component in self.components:
+			if modifier.modifiable_is_compatible(component):
+				component.add_modifier(modifier)

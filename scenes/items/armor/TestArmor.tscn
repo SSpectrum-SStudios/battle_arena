@@ -1,32 +1,57 @@
-[gd_scene load_steps=10 format=3 uid="uid://cw65pvypaey0g"]
+[gd_scene load_steps=17 format=3 uid="uid://cw65pvypaey0g"]
 
 [ext_resource type="Script" path="res://scripts/items/Item.gd" id="1_ohsqc"]
 [ext_resource type="Script" path="res://scripts/resources/modifiers/Modifier.gd" id="2_35wyk"]
-[ext_resource type="Script" path="res://scripts/resources/Damage.gd" id="3_05pvs"]
-[ext_resource type="Script" path="res://scripts/resources/modifiers/DamageOverTimeModifier.gd" id="4_6t8wm"]
+[ext_resource type="Script" path="res://scripts/resources/Damage.gd" id="3_0e8gw"]
+[ext_resource type="Script" path="res://scripts/resources/modifiers/SingleDamageModifier.gd" id="4_1p32w"]
+[ext_resource type="Script" path="res://scripts/resources/modifiers/DamageOverTimeModifier.gd" id="4_17hi8"]
 [ext_resource type="Script" path="res://scripts/resources/modifiers/AttackPayloadModifier.gd" id="5_bvogw"]
+[ext_resource type="Script" path="res://scripts/resources/modifiers/PhysicalDamageAugmentModifer.gd" id="6_plnh7"]
+[ext_resource type="Script" path="res://scripts/resources/modifiers/LifeStealModifier.gd" id="8_5mpbf"]
 
-[sub_resource type="Resource" id="Resource_ntx4r"]
-script = ExtResource("3_05pvs")
+[sub_resource type="Resource" id="Resource_kvob0"]
+script = ExtResource("3_0e8gw")
 damage_amount = 10.0
-damage_type = 1
+damage_type = 0
 
-[sub_resource type="Resource" id="Resource_07q5g"]
-script = ExtResource("4_6t8wm")
+[sub_resource type="Resource" id="Resource_42jlc"]
+script = ExtResource("4_17hi8")
 number_of_ticks = 5
 time_between_ticks = 0.5
-damage = SubResource("Resource_ntx4r")
+base_damage = SubResource("Resource_kvob0")
 modifiers = Array[ExtResource("2_35wyk")]([])
 
-[sub_resource type="Resource" id="Resource_4ld1l"]
+[sub_resource type="Resource" id="Resource_jknfi"]
 script = ExtResource("5_bvogw")
-modifiers = Array[ExtResource("2_35wyk")]([SubResource("Resource_07q5g")])
+modifiers = Array[ExtResource("2_35wyk")]([SubResource("Resource_42jlc")])
+
+[sub_resource type="Resource" id="Resource_ewkya"]
+script = ExtResource("6_plnh7")
+is_augment_multiplier = false
+augment_amount = 20.0
+modifiers = Array[ExtResource("2_35wyk")]([])
+
+[sub_resource type="Resource" id="Resource_g5245"]
+script = ExtResource("3_0e8gw")
+damage_amount = 100.0
+damage_type = 0
+
+[sub_resource type="Resource" id="Resource_q0t5r"]
+script = ExtResource("4_1p32w")
+base_damage = SubResource("Resource_g5245")
+modifiers = Array[ExtResource("2_35wyk")]([])
+
+[sub_resource type="Resource" id="Resource_7hhxt"]
+script = ExtResource("8_5mpbf")
+life_steal_percentage = 0.2
+modifiers = Array[ExtResource("2_35wyk")]([])
 
 [sub_resource type="BoxMesh" id="BoxMesh_a0ftc"]
+size = Vector3(0.5, 0.5, 0.5)
 
 [node name="TestArmor" type="Node3D"]
 script = ExtResource("1_ohsqc")
-modifiers = Array[ExtResource("2_35wyk")]([SubResource("Resource_4ld1l")])
+modifiers = Array[ExtResource("2_35wyk")]([SubResource("Resource_jknfi"), SubResource("Resource_ewkya"), SubResource("Resource_q0t5r"), SubResource("Resource_7hhxt")])
 
 [node name="MeshInstance3D" type="MeshInstance3D" parent="."]
 mesh = SubResource("BoxMesh_a0ftc")

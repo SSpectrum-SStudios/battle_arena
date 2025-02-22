@@ -1,8 +1,17 @@
-[gd_resource type="Resource" script_class="DamageOverTimeModifier" load_steps=2 format=3 uid="uid://cbl80f7icrbx1"]
+[gd_resource type="Resource" script_class="DamageOverTimeModifier" load_steps=5 format=3 uid="uid://c8vvsgg8vc0wt"]
 
-[ext_resource type="Script" path="res://scripts/resources/modifiers/DamageOverTimeModifier.gd" id="1_87v0n"]
+[ext_resource type="Script" path="res://scripts/resources/Damage.gd" id="1_kcast"]
+[ext_resource type="Script" path="res://scripts/resources/modifiers/Modifier.gd" id="1_tw5sw"]
+[ext_resource type="Script" path="res://scripts/resources/modifiers/DamageOverTimeModifier.gd" id="2_f8tuo"]
+
+[sub_resource type="Resource" id="Resource_laxff"]
+script = ExtResource("1_kcast")
+damage_amount = 0.0
+damage_type = 0
 
 [resource]
-script = ExtResource("1_87v0n")
+script = ExtResource("2_f8tuo")
 number_of_ticks = 5
 time_between_ticks = 0.5
+base_damage = SubResource("Resource_laxff")
+modifiers = Array[ExtResource("1_tw5sw")]([])

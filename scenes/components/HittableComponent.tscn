@@ -6,6 +6,6 @@
 [node name="HittableComponent" type="Node3D"]
 script = ExtResource("1_u2k2i")
 
-[node name="Area3D" type="Area3D" parent="."]
+[node name="IHittable" type="Area3D" parent="."]
 unique_name_in_owner = true
 script = ExtResource("2_33dh0")

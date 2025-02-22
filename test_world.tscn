@@ -1,10 +1,10 @@
 [gd_scene load_steps=17 format=3 uid="uid://dxfk62axe0nfx"]
 
-[ext_resource type="PackedScene" uid="uid://cc1m2a1obsyn4" path="res://addons/fpc/character.tscn" id="1_e18vq"]
 [ext_resource type="Texture2D" uid="uid://pe7a4weirj2g" path="res://textures/dark.png" id="2_08fdt"]
 [ext_resource type="Texture2D" uid="uid://cxjxvqmf4boxq" path="res://textures/green.png" id="3_q4clv"]
 [ext_resource type="Texture2D" uid="uid://dsv4jm4vydflb" path="res://textures/orange.png" id="4_1ns5t"]
-[ext_resource type="Script" path="res://scripts/utils/multiplayer_spawner.gd" id="4_4mjwu"]
+[ext_resource type="Script" path="res://scripts/utils/MultiplayerSpawner.gd" id="4_4mjwu"]
+[ext_resource type="PackedScene" uid="uid://flt0yan8li6v" path="res://scenes/Entities/EntPlayer.tscn" id="5_74vjj"]
 [ext_resource type="PackedScene" uid="uid://c83vr3lx66x4c" path="res://scenes/sphere_enemy_test.tscn" id="6_06esg"]
 
 [sub_resource type="PhysicalSkyMaterial" id="PhysicalSkyMaterial_edcox"]
@@ -107,6 +107,7 @@ material = SubResource("StandardMaterial3D_7j4uu")
 [node name="MultiplayerSpawner" type="MultiplayerSpawner" parent="."]
 spawn_path = NodePath(".")
 script = ExtResource("4_4mjwu")
-playerScene = ExtResource("1_e18vq")
+playerScene = ExtResource("5_74vjj")
 
 [node name="SphereEnemy" parent="." instance=ExtResource("6_06esg")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 3)

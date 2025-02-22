@@ -36,7 +36,6 @@ func _populate_items(node):
 func _distribute_modifiers(modifiers: Array[Modifier]):
 	for modifier in modifiers:
 		for component in self.components:
-			print("Modifier Name: ", modifier.priority, " : Compoonent Name: ", component.name, " : ", modifier.modifiable_is_compatible(component))
 			if modifier.modifiable_is_compatible(component):
 				component.add_modifier(modifier)
 	

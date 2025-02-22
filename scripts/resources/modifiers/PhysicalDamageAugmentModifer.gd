@@ -9,20 +9,22 @@ func _init(priority: Globals.ModifierPriority = Globals.ModifierPriority.LOWEST)
 	self.priority = priority
 
 func modifiable_is_compatible(modifiable) -> bool:
-	return modifiable is AttackComponent
+	return modifiable is AttackComponent or modifiable is DoesDamageModifier
 		
-func apply_modifier(component: BaseComponent):
+func apply_modifier(component):
 	if component is AttackComponent:
 		var attack_payload: AttackPayload = component.get_attack_payload()
 		for attack in attack_payload.attacking_modifiers:
-			if attack.has_method("get_damage"):
-				var damage: Damage = attack.get_damage()
-				if damage.damage_type == Globals.DamageType.PHYSICAL_DAMAGE:
-					augment_damage(attack)
+			if attack is DoesDamageModifier:
+				attack.modifiers.append(self)
+	elif component is DoesDamageModifier:
+		var damage: Damage = component.get_damage()
+		if  damage.damage_type == Globals.DamageType.PHYSICAL_DAMAGE:
+			augment_damage(damage)
 
-func augment_damage(attack):
+func augment_damage(damage: Damage):
 	if is_augment_multiplier:
-		damage_increased_amount = attack.damage_amount * augment_amount
-		attack.damage_amount += damage_increased_amount
+		damage_increased_amount = damage.damage_amount * augment_amount
+		damage.damage_amount += damage_increased_amount
 	else:
-		attack.damage_amount += augment_amount
+		damage.damage_amount += augment_amount

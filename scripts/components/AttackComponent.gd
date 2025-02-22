@@ -7,9 +7,10 @@ var modifiers: Array[Modifier]
 
 func _on_area_entered(area: Area3D) -> void:
 	if area is IHittable:
-		attack_payload.new(base_attacks.duplicate())
+		attack_payload = AttackPayload.new(base_attacks.duplicate())
 		for modifier in modifiers:
-			modifier.apply_modifier(self)
+			if modifier.modifiable_is_compatible(self):
+				modifier.apply_modifier(self)
 		area.hit(attack_payload)
 		
 func get_attack_payload() -> AttackPayload:

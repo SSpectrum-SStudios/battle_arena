@@ -1,7 +1,7 @@
 [gd_scene load_steps=6 format=3 uid="uid://c83vr3lx66x4c"]
 
-[ext_resource type="Script" path="res://scripts/components/Hittable.gd" id="1_03mhn"]
 [ext_resource type="Script" path="res://scripts/sphere_enemy_test.gd" id="1_dntt3"]
+[ext_resource type="PackedScene" uid="uid://bty83draq4s3b" path="res://scenes/components/HittableComponent.tscn" id="3_67fln"]
 [ext_resource type="PackedScene" uid="uid://b5kyjblko1jju" path="res://scenes/components/HealthComponent.tscn" id="3_bl228"]
 
 [sub_resource type="SphereShape3D" id="SphereShape3D_cgp4d"]
@@ -11,20 +11,22 @@
 [node name="SphereEnemy" type="Node3D"]
 script = ExtResource("1_dntt3")
 
-[node name="Hittable" type="Area3D" parent="."]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.37082, 0)
-script = ExtResource("1_03mhn")
-
-[node name="CollisionShape3D" type="CollisionShape3D" parent="Hittable"]
-shape = SubResource("SphereShape3D_cgp4d")
-
-[node name="MeshInstance3D" type="MeshInstance3D" parent="Hittable"]
-mesh = SubResource("SphereMesh_idg8v")
-
 [node name="HealthComponent" parent="." instance=ExtResource("3_bl228")]
 unique_name_in_owner = true
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.37082, 0)
 max_health = 200.0
 
-[connection signal="take_hit" from="Hittable" to="." method="_on_hittable_take_hit"]
+[node name="HittableComponent" parent="." instance=ExtResource("3_67fln")]
+
+[node name="IHittable_Area3D" type="CollisionShape3D" parent="HittableComponent/IHittable" index="0"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.37082, 0)
+shape = SubResource("SphereShape3D_cgp4d")
+
+[node name="IHittable_Area3D2" type="MeshInstance3D" parent="HittableComponent/IHittable" index="1"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.37082, 0)
+mesh = SubResource("SphereMesh_idg8v")
+skeleton = NodePath("")
+
 [connection signal="health_at_zero" from="HealthComponent" to="." method="_on_health_component_health_at_zero"]
+
+[editable path="HittableComponent"]
