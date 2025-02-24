@@ -1,0 +1,6 @@
+[gd_scene load_steps=2 format=3 uid="uid://bty83draq4s3b"]
+
+[ext_resource type="Script" path="res://scripts/components/hittable.gd" id="1_csikn"]
+
+[node name="Hittable" type="Area3D"]
+script = ExtResource("1_csikn")

@@ -1,6 +1,7 @@
-[gd_scene load_steps=27 format=3 uid="uid://cc1m2a1obsyn4"]
+[gd_scene load_steps=28 format=3 uid="uid://cc1m2a1obsyn4"]
 
 [ext_resource type="Script" path="res://addons/fpc/character.gd" id="1_0t4e8"]
+[ext_resource type="Script" path="res://scripts/damage_controller.gd" id="2_pvak0"]
 [ext_resource type="Script" path="res://addons/fpc/EditorModule.gd" id="3_v3ckk"]
 [ext_resource type="Script" path="res://addons/fpc/debug.gd" id="3_x1wcc"]
 [ext_resource type="Script" path="res://addons/fpc/player_items.gd" id="4_irax4"]
@@ -70,7 +71,7 @@ tracks/3/keys = {
 tracks/4/type = "value"
 tracks/4/imported = false
 tracks/4/enabled = true
-tracks/4/path = NodePath("Head:position")
+tracks/4/path = NodePath("CameraPivot:position")
 tracks/4/interp = 2
 tracks/4/loop_wrap = true
 tracks/4/keys = {
@@ -134,7 +135,7 @@ tracks/3/keys = {
 tracks/4/type = "value"
 tracks/4/imported = false
 tracks/4/enabled = true
-tracks/4/path = NodePath("Head:position")
+tracks/4/path = NodePath("CameraPivot:position")
 tracks/4/interp = 2
 tracks/4/loop_wrap = true
 tracks/4/keys = {
@@ -462,10 +463,10 @@ properties/5/replication_mode = 1
 [node name="Character" type="CharacterBody3D" node_paths=PackedStringArray("HEAD", "CAMERA", "HEADBOB_ANIMATION", "JUMP_ANIMATION", "CROUCH_ANIMATION", "COLLISION_MESH")]
 script = ExtResource("1_0t4e8")
 default_reticle = "res://addons/fpc/reticles/reticle_1.tscn"
-HEAD = NodePath("Head")
-CAMERA = NodePath("Head/Camera")
-HEADBOB_ANIMATION = NodePath("Head/HeadbobAnimation")
-JUMP_ANIMATION = NodePath("Head/JumpAnimation")
+HEAD = NodePath("CameraPivot")
+CAMERA = NodePath("CameraPivot/Camera")
+HEADBOB_ANIMATION = NodePath("CameraPivot/HeadbobAnimation")
+JUMP_ANIMATION = NodePath("CameraPivot/JumpAnimation")
 CROUCH_ANIMATION = NodePath("CrouchAnimation")
 COLLISION_MESH = NodePath("Collision")
 
@@ -482,38 +483,42 @@ libraries = {
 "": SubResource("AnimationLibrary_5e5t5")
 }
 
-[node name="Head" type="Node3D" parent="."]
+[node name="CameraPivot" type="Node3D" parent="."]
+unique_name_in_owner = true
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.5, 0)
 
-[node name="Camera" type="Camera3D" parent="Head"]
+[node name="Camera" type="Camera3D" parent="CameraPivot"]
+unique_name_in_owner = true
 
-[node name="HeadbobAnimation" type="AnimationPlayer" parent="Head"]
+[node name="HeadbobAnimation" type="AnimationPlayer" parent="CameraPivot"]
 libraries = {
 "": SubResource("AnimationLibrary_o0unb")
 }
 blend_times = [&"RESET", &"RESET", 0.5, &"RESET", &"walk", 0.5, &"walk", &"RESET", 0.5]
 
-[node name="JumpAnimation" type="AnimationPlayer" parent="Head"]
+[node name="JumpAnimation" type="AnimationPlayer" parent="CameraPivot"]
 libraries = {
 "": SubResource("AnimationLibrary_qeg5r")
 }
 speed_scale = 4.0
 
-[node name="Items" type="Node3D" parent="Head"]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -1.5, 0)
+[node name="DamageController" type="Node3D" parent="CameraPivot"]
+script = ExtResource("2_pvak0")
+
+[node name="Items" type="Node3D" parent="CameraPivot/DamageController"]
+unique_name_in_owner = true
 script = ExtResource("4_irax4")
 weapon = ExtResource("5_ui83s")
 
-[node name="WeaponAnimation" type="AnimationPlayer" parent="Head/Items"]
+[node name="WeaponAnimation" type="AnimationPlayer" parent="CameraPivot/DamageController/Items"]
 unique_name_in_owner = true
 libraries = {
 "": SubResource("AnimationLibrary_qlai7")
 }
 
-[node name="HandPivot" type="Node3D" parent="Head/Items"]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.986499, 0)
+[node name="HandPivot" type="Node3D" parent="CameraPivot/DamageController/Items"]
 
-[node name="Hand" type="Marker3D" parent="Head/Items/HandPivot"]
+[node name="Hand" type="Marker3D" parent="CameraPivot/DamageController/Items/HandPivot"]
 unique_name_in_owner = true
 transform = Transform3D(0.807882, 0.525317, -0.267148, -0.261453, 0.725716, 0.63638, 0.528174, -0.444274, 0.723639, 0.627729, 0.0132158, -1.02306)
 gizmo_extents = 1.32
@@ -554,4 +559,4 @@ script = ExtResource("3_v3ckk")
 [node name="MultiplayerSynchronizer" type="MultiplayerSynchronizer" parent="."]
 replication_config = SubResource("SceneReplicationConfig_iqbda")
 
-[connection signal="animation_finished" from="Head/Items/WeaponAnimation" to="Head/Items" method="_on_weapon_animation_animation_finished"]
+[connection signal="animation_finished" from="CameraPivot/DamageController/Items/WeaponAnimation" to="CameraPivot/DamageController/Items" method="_on_weapon_animation_animation_finished"]
