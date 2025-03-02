@@ -1,0 +1,55 @@
+[gd_scene load_steps=8 format=3 uid="uid://flt0yan8li6v"]
+
+[ext_resource type="Script" path="res://scripts/PlayerController.gd" id="1_mnjil"]
+[ext_resource type="Script" path="res://scripts/MovementController.gd" id="1_n6iyu"]
+[ext_resource type="PackedScene" uid="uid://b5kyjblko1jju" path="res://scenes/components/HealthComponent.tscn" id="2_f4vpr"]
+[ext_resource type="PackedScene" uid="uid://cjb4gcocabkal" path="res://scenes/items/weapons/BasicSword.tscn" id="3_7fklq"]
+[ext_resource type="Script" path="res://scripts/components/HittableComponent.gd" id="4_75dfu"]
+[ext_resource type="Shape3D" uid="uid://bef6iowkp4wt1" path="res://resources/PlayerShape.tres" id="12_v4vd5"]
+
+[sub_resource type="SceneReplicationConfig" id="SceneReplicationConfig_6nqdd"]
+properties/0/path = NodePath(".:position")
+properties/0/spawn = true
+properties/0/replication_mode = 1
+properties/1/path = NodePath(".:rotation")
+properties/1/spawn = true
+properties/1/replication_mode = 1
+properties/2/path = NodePath("Head:rotation")
+properties/2/spawn = true
+properties/2/replication_mode = 1
+properties/3/path = NodePath("Head/HandSlot1:position")
+properties/3/spawn = true
+properties/3/replication_mode = 1
+
+[node name="EntPlayer" type="CharacterBody3D"]
+script = ExtResource("1_n6iyu")
+
+[node name="Player_Controller" type="Node3D" parent="."]
+script = ExtResource("1_mnjil")
+
+[node name="HealthComponent" parent="Player_Controller" instance=ExtResource("2_f4vpr")]
+
+[node name="ArmorSlot" type="Marker3D" parent="Player_Controller"]
+
+[node name="Head" type="Node3D" parent="Player_Controller"]
+unique_name_in_owner = true
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.838409, 0)
+
+[node name="HandSlot1" type="Marker3D" parent="Player_Controller/Head"]
+transform = Transform3D(1, 0, 0, 0, 0.790476, 0.612493, 0, -0.612493, 0.790476, 0.545632, -0.425858, -1.07795)
+
+[node name="BasicSword" parent="Player_Controller/Head/HandSlot1" instance=ExtResource("3_7fklq")]
+
+[node name="Camera3D" type="Camera3D" parent="Player_Controller/Head"]
+
+[node name="HittableComponent" type="Area3D" parent="Player_Controller"]
+script = ExtResource("4_75dfu")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="Player_Controller/HittableComponent"]
+shape = ExtResource("12_v4vd5")
+
+[node name="PlayerShape" type="CollisionShape3D" parent="."]
+shape = ExtResource("12_v4vd5")
+
+[node name="MultiplayerSynchronizer" type="MultiplayerSynchronizer" parent="."]
+replication_config = SubResource("SceneReplicationConfig_6nqdd")

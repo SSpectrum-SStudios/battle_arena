@@ -32,7 +32,6 @@ func _on_lobby_created(is_conncected, id):
 		self.lobby_id = id
 		Steam.setLobbyData(lobby_id, "name", str(Steam.getPersonaName()+"'s Lobby"))
 		Steam.setLobbyJoinable(lobby_id, true)
-		print(lobby_id)
 		
 func join_lobby(id):
 	peer.connect_lobby(id)

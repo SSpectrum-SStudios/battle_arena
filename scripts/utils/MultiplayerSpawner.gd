@@ -8,7 +8,7 @@ func _ready() -> void:
 	self.spawn_function = spawnPlayer
 	if is_multiplayer_authority():
 		self.spawn(1)
-		#players[1].global_position = Vector3(0,5,0)
+		players[1].global_position = Vector3(0,5,0)
 		multiplayer.peer_connected.connect(spawn)
 		multiplayer.peer_disconnected.connect(removePlayer)
 		

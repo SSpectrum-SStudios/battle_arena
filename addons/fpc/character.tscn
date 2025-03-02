@@ -5,7 +5,7 @@
 [ext_resource type="Script" path="res://addons/fpc/EditorModule.gd" id="3_v3ckk"]
 [ext_resource type="Script" path="res://addons/fpc/debug.gd" id="3_x1wcc"]
 [ext_resource type="Script" path="res://addons/fpc/player_items.gd" id="4_irax4"]
-[ext_resource type="PackedScene" uid="uid://cjb4gcocabkal" path="res://scenes/items/weapons/basic_sword.tscn" id="5_ui83s"]
+[ext_resource type="PackedScene" uid="uid://cjb4gcocabkal" path="res://scenes/items/weapons/BasicSword.tscn" id="5_ui83s"]
 
 [sub_resource type="StandardMaterial3D" id="StandardMaterial3D_kp17n"]
 albedo_color = Color(0.909804, 0.596078, 0, 1)

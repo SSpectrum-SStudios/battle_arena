@@ -1,12 +1,25 @@
 extends Node3D
 
-@onready var health_component: HealthComponent = %HealthComponent
+const IEffectable = preload("res://scripts/interfaces/IEffectable.gd")
 
-func _on_hittable_take_hit(damage_list: Array[Damage]) -> void:
-	for damage in damage_list:
-		if damage is FireDamage:
-			damage.damage_func(health_component)
+@export var components: Array[Node]
 
-
-func _on_health_component_health_at_zero() -> void:
-	pass
+func _ready() -> void:
+	_populate_components(self)
+	Globals.hit_received.connect(self.receive_hit_test)
+	
+func _populate_components(node: Node) -> void:
+	for child in node.get_children():
+		if IEffectable.is_IEffectable(child):
+			components.append(child)
+		if child.get_child_count() > 0:
+			_populate_components(child)
+			
+func receive_hit_test(context: HitContext):
+	self._distribute_effects(context.attack_payload.attacking_effects)
+			
+func _distribute_effects(effects: Array) -> void:
+	for effect in effects:
+		for component in components:
+			if effect.effectable_is_compatible(component):
+				component.add_effect(effect)
