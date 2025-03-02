@@ -1,8 +1,22 @@
-[gd_scene load_steps=5 format=3 uid="uid://cjb4gcocabkal"]
+[gd_scene load_steps=12 format=3 uid="uid://cjb4gcocabkal"]
 
 [ext_resource type="ArrayMesh" uid="uid://ckfypdwpma21m" path="res://models/items/weapons/model.obj" id="1_dabtb"]
 [ext_resource type="PackedScene" uid="uid://cvx5nhcif18qf" path="res://scenes/components/AttackComponent.tscn" id="2_4gbkv"]
 [ext_resource type="Script" path="res://scripts/items/Item.gd" id="2_mil44"]
+[ext_resource type="Script" path="res://scripts/interfaces/IEffect.gd" id="4_3okkj"]
+[ext_resource type="Resource" uid="uid://dw486x84e0fce" path="res://resources/effects/DamageOverTimeEffect.tres" id="5_q6p6b"]
+[ext_resource type="Script" path="res://scripts/resources/AttackPayload.gd" id="7_3vhvf"]
+[ext_resource type="Script" path="res://scripts/interfaces/IModifier.gd" id="7_nkf2v"]
+[ext_resource type="Script" path="res://scripts/modifiers/PhysicalDamageAugmentModifer.gd" id="8_iex0h"]
+
+[sub_resource type="Resource" id="Resource_5sxhu"]
+script = ExtResource("7_3vhvf")
+attacking_effects = Array[ExtResource("4_3okkj")]([ExtResource("5_q6p6b")])
+
+[sub_resource type="Resource" id="Resource_ujjan"]
+script = ExtResource("8_iex0h")
+is_augment_multiplier = false
+augment_amount = 10.0
 
 [sub_resource type="BoxShape3D" id="BoxShape3D_pb82s"]
 size = Vector3(0.16, 1.245, 0.09)
@@ -12,8 +26,10 @@ mesh = ExtResource("1_dabtb")
 script = ExtResource("2_mil44")
 
 [node name="AttackComponent" parent="." instance=ExtResource("2_4gbkv")]
+base_attack_payload = SubResource("Resource_5sxhu")
+modifiers = Array[ExtResource("7_nkf2v")]([SubResource("Resource_ujjan")])
 
-[node name="CollisionShape3D" type="CollisionShape3D" parent="AttackComponent/Area3d" index="0"]
+[node name="CollisionShape3d" type="CollisionShape3D" parent="AttackComponent"]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.593287, 0)
 shape = SubResource("BoxShape3D_pb82s")
 

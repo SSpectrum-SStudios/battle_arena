@@ -1,21 +1,25 @@
 extends Node3D
 
-@export var components : Array[BaseComponent]
+const IEffectable = preload("res://scripts/interfaces/IEffectable.gd")
+
+@export var components: Array[Node]
 
 func _ready() -> void:
 	_populate_components(self)
+	Globals.hit_received.connect(self.receive_hit_test)
 	
-func _populate_components(node):
-	for N in node.get_children():
-		if N is BaseComponent:
-			components.append(N)
-			if N.has_signal("propagate_modifier"):
-				N.propagate_modifier.connect(_distribute_modifiers)
-		if N.get_child_count() > 0:
-			_populate_components(N)
+func _populate_components(node: Node) -> void:
+	for child in node.get_children():
+		if IEffectable.is_IEffectable(child):
+			components.append(child)
+		if child.get_child_count() > 0:
+			_populate_components(child)
 			
-func _distribute_modifiers(modifiers: Array[Modifier]):
-	for modifier in modifiers:
-		for component in self.components:
-			if modifier.modifiable_is_compatible(component):
-				component.add_modifier(modifier)
+func receive_hit_test(context: HitContext):
+	self._distribute_effects(context.attack_payload.attacking_effects)
+			
+func _distribute_effects(effects: Array) -> void:
+	for effect in effects:
+		for component in components:
+			if effect.effectable_is_compatible(component):
+				component.add_effect(effect)

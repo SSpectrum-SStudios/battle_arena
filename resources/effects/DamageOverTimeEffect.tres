@@ -1,0 +1,21 @@
+[gd_resource type="Resource" script_class="IntervalEffect" load_steps=6 format=3 uid="uid://dw486x84e0fce"]
+
+[ext_resource type="Script" path="res://scripts/resources/DamageContext.gd" id="1_0rmmu"]
+[ext_resource type="Script" path="res://scripts/effects/IntervalEffect.gd" id="1_83wh3"]
+[ext_resource type="Script" path="res://scripts/effects/SingleDamageEffect.gd" id="1_ues38"]
+
+[sub_resource type="Resource" id="Resource_ou1jk"]
+script = ExtResource("1_0rmmu")
+damage_amount = 5.0
+damage_type = 0
+attacker_id = 1
+
+[sub_resource type="Resource" id="Resource_wnem2"]
+script = ExtResource("1_ues38")
+damage_context = SubResource("Resource_ou1jk")
+
+[resource]
+script = ExtResource("1_83wh3")
+effect_to_apply = SubResource("Resource_wnem2")
+number_of_ticks = 5
+time_between_ticks = 0.5

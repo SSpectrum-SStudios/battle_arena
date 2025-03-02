@@ -110,4 +110,4 @@ script = ExtResource("4_4mjwu")
 playerScene = ExtResource("5_74vjj")
 
 [node name="SphereEnemy" parent="." instance=ExtResource("6_06esg")]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 3)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -1, 1.27405, 3)

@@ -1,9 +1,0 @@
-[gd_resource type="Resource" script_class="LifeStealModifier" load_steps=3 format=3 uid="uid://cfas525r7dqwf"]
-
-[ext_resource type="Script" path="res://scripts/resources/modifiers/Modifier.gd" id="1_s7478"]
-[ext_resource type="Script" path="res://scripts/resources/modifiers/LifeStealModifier.gd" id="2_q1ah8"]
-
-[resource]
-script = ExtResource("2_q1ah8")
-life_steal_percentage = 0.2
-modifiers = Array[ExtResource("1_s7478")]([])

@@ -1,11 +1,6 @@
-[gd_scene load_steps=3 format=3 uid="uid://bty83draq4s3b"]
+[gd_scene load_steps=2 format=3 uid="uid://bty83draq4s3b"]
 
-[ext_resource type="Script" path="res://scripts/components/HittableComponent.gd" id="1_u2k2i"]
-[ext_resource type="Script" path="res://scripts/components/Hittable.gd" id="2_33dh0"]
+[ext_resource type="Script" path="res://scripts/components/HittableComponent.gd" id="2_33dh0"]
 
-[node name="HittableComponent" type="Node3D"]
-script = ExtResource("1_u2k2i")
-
-[node name="IHittable" type="Area3D" parent="."]
-unique_name_in_owner = true
+[node name="IHittable" type="Area3D"]
 script = ExtResource("2_33dh0")

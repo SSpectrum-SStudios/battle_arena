@@ -1,37 +1,65 @@
-extends BaseComponent
+extends Node
 class_name HealthComponent
 
-@export var max_health: float
-@export var modifiers: Array[Modifier]
-var current_health: float
+const IModifiable = preload("res://scripts/interfaces/IModifiable.gd")
+const IEffectable = preload("res://scripts/interfaces/IEffectable.gd")
 
+@export var health: HealthResource
+@export var modifiers: Array[IModifier] = []
+@export var player_id: int
+
+var modified_health_cached : HealthResource
 signal health_at_zero
-signal damage_taken(damage: Damage)
+
+# Adds a modifier (an object that adheres to IModifier)
+func add_modifier(modifier: IModifier):
+	modifiers.append(modifier)
+	modifiers.sort_custom(IModifier.compare_modifier_by_pritority)
+	_recalculate_modified_hp()
+
+# Removes a modifier.
+func remove_modifier(modifier: IModifier):
+	modifiers.erase(modifier)
+	_recalculate_modified_hp()
+	
+# Returns the value before any modifiers have been applied. Read Only	
+func get_base_value():
+	return self.health.duplicate(true)
+
+# Returns the value after all modifiers have been applied.
+func get_modified_value():
+	return modified_health_cached
+	
+func add_effect(effect: IEffect):
+	effect.apply_effect(self)
 
 func _ready() -> void:
-	current_health = max_health
-	
-func take_damage(damage: Damage):
-	current_health -= damage.damage_amount
-	damage_taken.emit(damage)
-	if current_health <= 0:
-		current_health = 0
+	health.current_health = health.max_health
+	self.modified_health_cached = health.duplicate(true)
+	self._recalculate_modified_hp()
+
+func take_damage(damage_context: DamageContext):
+	if modified_health_cached.current_health - damage_context.damage_amount <= 0:
+		damage_context.damage_amount = modified_health_cached.current_health
+		modified_health_cached.current_health = 0
 		health_at_zero.emit()
-	print("Current Health: ", self.current_health)
+	else:
+		modified_health_cached.current_health -= damage_context.damage_amount
+		
+	Globals.on_damage_taken.emit(damage_context)
+	print("Taking damage: ", damage_context.damage_amount)
+	print("Current Health: ", self.modified_health_cached.current_health)
 	
 func heal(hp_to_heal: float):
-	current_health += hp_to_heal
-	if current_health > max_health:
-		current_health = max_health
-	print("Current Health: ", self.current_health)
-	
-func add_modifier(modifier: Modifier):
-	if not modifier.clean_up.is_connected(remove_modifier):
-		modifier.clean_up.connect(remove_modifier)
-	modifiers.append(modifier)
-	if modifier.modifiable_is_compatible(self):
-		modifier.apply_modifier(self)
-		
-func remove_modifier(modifier: Modifier):
-	modifier.clean_up.disconnect(remove_modifier)
-	self.modifiers.erase(modifier)
+	modified_health_cached.current_health += hp_to_heal
+	if modified_health_cached.current_health > modified_health_cached.max_health:
+		modified_health_cached.current_health = modified_health_cached.max_health
+	print("Healing: ", hp_to_heal)
+	print("Current Health: ", self.modified_health_cached.current_health)
+
+func _recalculate_modified_hp():
+	var ratio: float = modified_health_cached.current_health / modified_health_cached.max_health
+	self.health.current_health = self.health.max_health * ratio
+	self.modified_health_cached = health.duplicate(true)
+	for modifier in self.modifiers:
+		self.modified_health_cached = modifier.modify(self.modified_health_cached)
