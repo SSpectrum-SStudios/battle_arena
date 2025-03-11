@@ -60,7 +60,7 @@ class IntervalEffectNode extends IEffectNode:
 				self.effect_timer.timeout.disconnect(self._on_timer_ended)
 				self.effect_timer.queue_free()
 		queue_free()
-		
+
 	func create_timer():
 		self.effect_timer = Timer.new()
 		add_child(effect_timer)
@@ -76,6 +76,6 @@ class IntervalEffectNode extends IEffectNode:
 		
 		if current_number_ticks <= 0:
 			self.remove_effect(self.target)
-	
+
 	func _on_timer_ended():
 		self.tick_effect()

@@ -5,7 +5,7 @@
 [ext_resource type="PackedScene" uid="uid://b5kyjblko1jju" path="res://scenes/components/HealthComponent.tscn" id="3_bl228"]
 [ext_resource type="Script" path="res://scripts/resources/HealthResource.gd" id="3_t6lee"]
 
-[sub_resource type="Resource" id="Resource_xfima"]
+[sub_resource type="Resource" id="Resource_wfblr"]
 resource_local_to_scene = true
 script = ExtResource("3_t6lee")
 max_health = 300.0
@@ -20,7 +20,7 @@ script = ExtResource("1_dntt3")
 
 [node name="HealthComponent" parent="." instance=ExtResource("3_bl228")]
 unique_name_in_owner = true
-health = SubResource("Resource_xfima")
+health = SubResource("Resource_wfblr")
 
 [node name="HittableComponent" parent="." instance=ExtResource("3_67fln")]
 

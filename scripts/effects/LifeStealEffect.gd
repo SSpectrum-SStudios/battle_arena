@@ -21,7 +21,7 @@ func copy() -> LifeStealEffect:
 	return new_effect
 
 # Instantiates the LifeStealEffectNode with the lifesteal percentage
-func instantiate(target: Node) -> IEffectNode:
+func instantiate(_target: Node) -> IEffectNode:
 	return LifeStealEffectNode.new(self.lifesteal_percentage)
 	
 class LifeStealEffectNode extends IEffectNode:
@@ -42,11 +42,11 @@ class LifeStealEffectNode extends IEffectNode:
 	func apply_effect(target: Node):
 		self.target = target as HealthComponent
 		# Assumes HealthComponent has a player_id property
-		self.player_id = target.player_id
+		self.player_id = self.target.player_id
 		Globals.on_damage_taken.connect(self._on_damage_taken)
 
 	# Cleans up the effect by disconnecting the signal and freeing the node
-	func remove_effect(target: Node):
+	func remove_effect(_target: Node):
 		Globals.on_damage_taken.disconnect(self._on_damage_taken)
 		queue_free()
 
