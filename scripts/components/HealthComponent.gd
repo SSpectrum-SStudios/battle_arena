@@ -66,6 +66,7 @@ func _ready() -> void:
 	self._recalculate_modified_hp()
 
 func take_damage(damage_context: DamageContext):
+	print("Name: ", get_parent().name)
 	if not is_multiplayer_authority():
 		return
 	if modified_health_cached.current_health - damage_context.damage_amount <= 0:

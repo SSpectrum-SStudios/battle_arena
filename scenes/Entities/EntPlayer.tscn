@@ -10,6 +10,7 @@
 [ext_resource type="Shape3D" uid="uid://bef6iowkp4wt1" path="res://resources/PlayerShape.tres" id="12_v4vd5"]
 
 [sub_resource type="Resource" id="Resource_eg4qn"]
+resource_local_to_scene = true
 script = ExtResource("4_x02dg")
 max_health = 100.0
 current_health = 0.0
