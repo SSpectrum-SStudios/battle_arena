@@ -1,4 +1,4 @@
-[gd_scene load_steps=10 format=3 uid="uid://flt0yan8li6v"]
+[gd_scene load_steps=11 format=3 uid="uid://flt0yan8li6v"]
 
 [ext_resource type="Script" path="res://scripts/PlayerController.gd" id="1_mnjil"]
 [ext_resource type="Script" path="res://scripts/MovementController.gd" id="1_n6iyu"]
@@ -13,6 +13,23 @@
 script = ExtResource("4_x02dg")
 max_health = 100.0
 current_health = 0.0
+
+[sub_resource type="SceneReplicationConfig" id="SceneReplicationConfig_km1et"]
+properties/0/path = NodePath(".:position")
+properties/0/spawn = true
+properties/0/replication_mode = 1
+properties/1/path = NodePath(".:rotation")
+properties/1/spawn = true
+properties/1/replication_mode = 1
+properties/2/path = NodePath("Player_Controller/Head:rotation")
+properties/2/spawn = true
+properties/2/replication_mode = 1
+properties/3/path = NodePath("Player_Controller/Head/HandSlot1:position")
+properties/3/spawn = true
+properties/3/replication_mode = 1
+properties/4/path = NodePath("Player_Controller/Head/HandSlot1:rotation")
+properties/4/spawn = true
+properties/4/replication_mode = 1
 
 [node name="EntPlayer" type="CharacterBody3D"]
 script = ExtResource("1_n6iyu")
@@ -37,6 +54,7 @@ transform = Transform3D(1, 0, 0, 0, 0.790476, 0.612493, 0, -0.612493, 0.790476, 
 [node name="BasicSword" parent="Player_Controller/Head/HandSlot1" instance=ExtResource("3_7fklq")]
 
 [node name="Camera3D" type="Camera3D" parent="Player_Controller/Head"]
+unique_name_in_owner = true
 
 [node name="HittableComponent" type="Area3D" parent="Player_Controller"]
 script = ExtResource("4_75dfu")
@@ -46,3 +64,6 @@ shape = ExtResource("12_v4vd5")
 
 [node name="PlayerShape" type="CollisionShape3D" parent="."]
 shape = ExtResource("12_v4vd5")
+
+[node name="MultiplayerSynchronizer" type="MultiplayerSynchronizer" parent="."]
+replication_config = SubResource("SceneReplicationConfig_km1et")

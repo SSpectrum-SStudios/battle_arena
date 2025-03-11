@@ -9,11 +9,16 @@ extends CharacterBody3D
 @export var gravity: float = 9.8
 @export var mouse_sensitivity: float = 0.005
 
+@onready var camera_3d: Camera3D = %Camera3D
+
 var escaped: bool = false
 func _ready() -> void:
-	if is_multiplayer_authority():
-		# Capture the mouse for camera control.
-		Input.set_mouse_mode(Input.MOUSE_MODE_CAPTURED)
+	if not is_multiplayer_authority():
+		return
+		
+	camera_3d.make_current()
+	# Capture the mouse for camera control.
+	Input.set_mouse_mode(Input.MOUSE_MODE_CAPTURED)
 	
 func _input(event: InputEvent) -> void:
 	if not is_multiplayer_authority():
