@@ -1,4 +1,4 @@
-[gd_scene load_steps=11 format=3 uid="uid://flt0yan8li6v"]
+[gd_scene load_steps=10 format=3 uid="uid://flt0yan8li6v"]
 
 [ext_resource type="Script" path="res://scripts/PlayerController.gd" id="1_mnjil"]
 [ext_resource type="Script" path="res://scripts/MovementController.gd" id="1_n6iyu"]
@@ -13,26 +13,6 @@
 script = ExtResource("4_x02dg")
 max_health = 100.0
 current_health = 0.0
-
-[sub_resource type="SceneReplicationConfig" id="SceneReplicationConfig_6nqdd"]
-properties/0/path = NodePath(".:position")
-properties/0/spawn = true
-properties/0/replication_mode = 1
-properties/1/path = NodePath(".:rotation")
-properties/1/spawn = true
-properties/1/replication_mode = 1
-properties/2/path = NodePath("Head:rotation")
-properties/2/spawn = true
-properties/2/replication_mode = 1
-properties/3/path = NodePath("Head/HandSlot1:position")
-properties/3/spawn = true
-properties/3/replication_mode = 1
-properties/4/path = NodePath("Player_Controller/Head/HandSlot1:position")
-properties/4/spawn = true
-properties/4/replication_mode = 1
-properties/5/path = NodePath("Player_Controller/Head/HandSlot1:rotation")
-properties/5/spawn = true
-properties/5/replication_mode = 1
 
 [node name="EntPlayer" type="CharacterBody3D"]
 script = ExtResource("1_n6iyu")
@@ -66,6 +46,3 @@ shape = ExtResource("12_v4vd5")
 
 [node name="PlayerShape" type="CollisionShape3D" parent="."]
 shape = ExtResource("12_v4vd5")
-
-[node name="MultiplayerSynchronizer" type="MultiplayerSynchronizer" parent="."]
-replication_config = SubResource("SceneReplicationConfig_6nqdd")
