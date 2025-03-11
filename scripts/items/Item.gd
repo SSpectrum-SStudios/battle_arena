@@ -4,6 +4,9 @@ class_name Item
 @export var effects: Array[IEffect]
 @export var item_id: int
 
+func _ready() -> void:
+	item_id = Globals.get_new_id()
+
 func get_effects() -> Array[IEffect]:
 	var item_wrapped_effects : Array[IEffect] = []
 	for effect in effects:

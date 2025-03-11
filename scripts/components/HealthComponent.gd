@@ -4,13 +4,37 @@ class_name HealthComponent
 const IModifiable = preload("res://scripts/interfaces/IModifiable.gd")
 const IEffectable = preload("res://scripts/interfaces/IEffectable.gd")
 
-@export var health: HealthResource
+@export var health: HealthResource = HealthResource.new()
 @export var modifiers: Array[IModifier] = []
-@export var player_id: int
+@export var entity_id: int
 
 var modified_health_cached : HealthResource
-signal health_at_zero
 
+@export var synced_max_health: float: 
+	get:
+		return health.max_health
+	set(value):
+		health.max_health = value
+		
+@export var synced_current_health: float: 
+	get:
+		return health.current_health
+	set(value):
+		health.current_health = value 
+
+@export var synced_mod_max_health: float: 
+	get:
+		return modified_health_cached.max_health
+	set(value):
+		modified_health_cached.max_health = value
+		
+@export var synced_mod_current_health: float: 
+	get:
+		return modified_health_cached.current_health
+	set(value):
+		modified_health_cached.current_health = value 
+		
+signal health_at_zero
 # Adds a modifier (an object that adheres to IModifier)
 func add_modifier(modifier: IModifier):
 	modifiers.append(modifier)
@@ -33,12 +57,17 @@ func get_modified_value():
 func add_effect(effect: IEffect):
 	effect.apply_effect(self)
 
+func set_id(id: int):
+	entity_id = id
+
 func _ready() -> void:
 	health.current_health = health.max_health
 	self.modified_health_cached = health.duplicate(true)
 	self._recalculate_modified_hp()
 
 func take_damage(damage_context: DamageContext):
+	if not is_multiplayer_authority():
+		return
 	if modified_health_cached.current_health - damage_context.damage_amount <= 0:
 		damage_context.damage_amount = modified_health_cached.current_health
 		modified_health_cached.current_health = 0
@@ -51,6 +80,8 @@ func take_damage(damage_context: DamageContext):
 	print("Current Health: ", self.modified_health_cached.current_health)
 	
 func heal(hp_to_heal: float):
+	if not is_multiplayer_authority():
+		return
 	modified_health_cached.current_health += hp_to_heal
 	if modified_health_cached.current_health > modified_health_cached.max_health:
 		modified_health_cached.current_health = modified_health_cached.max_health
@@ -58,6 +89,8 @@ func heal(hp_to_heal: float):
 	print("Current Health: ", self.modified_health_cached.current_health)
 
 func _recalculate_modified_hp():
+	if not is_multiplayer_authority():
+		return
 	var ratio: float = modified_health_cached.current_health / modified_health_cached.max_health
 	self.health.current_health = self.health.max_health * ratio
 	self.modified_health_cached = health.duplicate(true)

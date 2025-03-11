@@ -31,8 +31,8 @@ class LifeStealEffectNode extends IEffectNode:
 	# Reference to the HealthComponent this node is attached to
 	var target: HealthComponent
 	
-	# Player ID associated with the HealthComponent
-	var player_id: int
+	# Entity ID associated with the HealthComponent
+	var entity_id: int
 
 	# Constructor to initialize the lifesteal percentage
 	func _init(percentage: float):
@@ -41,8 +41,8 @@ class LifeStealEffectNode extends IEffectNode:
 	# Sets up the effect by storing the target and connecting to the damage signal
 	func apply_effect(target: Node):
 		self.target = target as HealthComponent
-		# Assumes HealthComponent has a player_id property
-		self.player_id = self.target.player_id
+		# Assumes HealthComponent has a entity_id property
+		self.entity_id = self.target.entity_id
 		Globals.on_damage_taken.connect(self._on_damage_taken)
 
 	# Cleans up the effect by disconnecting the signal and freeing the node
@@ -52,6 +52,6 @@ class LifeStealEffectNode extends IEffectNode:
 
 	# Handles the damage taken signal and applies healing if conditions are met
 	func _on_damage_taken(damage_context: DamageContext):
-		if damage_context.attacker_id == self.player_id:
+		if damage_context.attacker_id == self.entity_id:
 			var heal_amount = damage_context.damage_amount * lifesteal_percentage
 			target.heal(heal_amount)

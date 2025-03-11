@@ -1,5 +1,7 @@
 extends Node
 
+static var id_counter: int = -1
+
 ##Enums 
 enum DamageType {
 	PHYSICAL_DAMAGE,
@@ -26,3 +28,9 @@ static func get_core_effect(effect: IEffect) -> IEffect:
 	if effect is IContainerEffect:
 		return effect.get_nested_effect()
 	return effect
+
+func get_new_id() -> int:
+	if is_multiplayer_authority():
+		id_counter += 1
+		return id_counter
+	return -1

@@ -11,6 +11,8 @@ var modified_most_recent_hit: HitContext = null
 var entity_id: int
 
 func hit(attack_payload: AttackPayload):
+	if not is_multiplayer_authority():
+		return
 	self.base_most_recent_hit = HitContext.new(self.entity_id, attack_payload)
 	Globals.hit_received.emit(base_most_recent_hit)
 	var modified_context: HitContext = self.get_modified_value()
@@ -21,6 +23,9 @@ func hit(attack_payload: AttackPayload):
 func add_modifier(modifier):
 	modifiers.append(modifier)
 	modifiers.sort_custom(IModifier.compare_modifier_by_pritority)
+
+func set_id(id: int):
+	entity_id = id
 
 # Removes a modifier.
 func remove_modifier(modifier):

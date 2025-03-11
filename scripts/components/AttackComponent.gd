@@ -3,7 +3,7 @@ class_name AttackComponent
 const IModifiable = preload("res://scripts/interfaces/IModifiable.gd")
 const IEffectable = preload("res://scripts/interfaces/IEffectable.gd")
 
-
+@export var entity_id: int
 @export var base_attack_payload: AttackPayload = AttackPayload.new([])
 @export var modifiers: Array[IModifier]
 
@@ -34,3 +34,6 @@ func get_modified_value():
 	
 func add_effect(effect: IEffect):
 	effect.apply_effect(self)
+	
+func set_id(id: int):
+	entity_id = id

@@ -10,8 +10,11 @@ const IEffectable = preload("res://scripts/interfaces/IEffectable.gd")
 # Array of items
 @export var items: Array[Item]
 
+@export var player_id: int
+
 func _ready() -> void:
 	# Populate components and items from the node tree
+	player_id = Globals.get_new_id()
 	_populate_components(self)
 	_populate_items(self)
 	
@@ -31,6 +34,7 @@ func get_effects_from_items() -> Array[IEffect]:
 func _populate_components(node: Node) -> void:
 	for child in node.get_children():
 		if IEffectable.is_IEffectable(child):
+			child.set_id(player_id)
 			components.append(child)
 		if child.get_child_count() > 0:
 			_populate_components(child)

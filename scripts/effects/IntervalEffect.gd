@@ -64,6 +64,7 @@ class IntervalEffectNode extends IEffectNode:
 	func create_timer():
 		self.effect_timer = Timer.new()
 		add_child(effect_timer)
+		await effect_timer.ready
 		effect_timer.start(time_between_ticks)
 		effect_timer.timeout.connect(self._on_timer_ended)
 

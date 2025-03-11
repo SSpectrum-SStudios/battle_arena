@@ -27,6 +27,12 @@ properties/2/replication_mode = 1
 properties/3/path = NodePath("Head/HandSlot1:position")
 properties/3/spawn = true
 properties/3/replication_mode = 1
+properties/4/path = NodePath("Player_Controller/Head/HandSlot1:position")
+properties/4/spawn = true
+properties/4/replication_mode = 1
+properties/5/path = NodePath("Player_Controller/Head/HandSlot1:rotation")
+properties/5/spawn = true
+properties/5/replication_mode = 1
 
 [node name="EntPlayer" type="CharacterBody3D"]
 script = ExtResource("1_n6iyu")
@@ -36,7 +42,6 @@ script = ExtResource("1_mnjil")
 
 [node name="HealthComponent" parent="Player_Controller" instance=ExtResource("2_f4vpr")]
 health = SubResource("Resource_eg4qn")
-player_id = 1
 
 [node name="ArmorSlot" type="Marker3D" parent="Player_Controller"]
 
