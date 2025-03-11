@@ -1,0 +1,43 @@
+[gd_scene load_steps=13 format=3 uid="uid://cw65pvypaey0g"]
+
+[ext_resource type="Script" path="res://scripts/items/Item.gd" id="1_ohsqc"]
+[ext_resource type="Script" path="res://scripts/interfaces/IEffect.gd" id="2_o22d3"]
+[ext_resource type="Script" path="res://scripts/effects/SingleDamageEffect.gd" id="4_1p32w"]
+[ext_resource type="Script" path="res://scripts/resources/DamageContext.gd" id="4_h37h6"]
+[ext_resource type="Script" path="res://scripts/effects/IntervalEffect.gd" id="6_4knp6"]
+[ext_resource type="Script" path="res://scripts/effects/LifeStealEffect.gd" id="8_5mpbf"]
+
+[sub_resource type="Resource" id="Resource_7oo4m"]
+script = ExtResource("8_5mpbf")
+lifesteal_percentage = 1.0
+
+[sub_resource type="Resource" id="Resource_40dly"]
+script = ExtResource("4_h37h6")
+damage_amount = 50.0
+damage_type = 0
+attacker_id = -1
+
+[sub_resource type="Resource" id="Resource_7isop"]
+script = ExtResource("4_1p32w")
+damage_context = SubResource("Resource_40dly")
+
+[sub_resource type="Resource" id="Resource_prwy5"]
+script = ExtResource("8_5mpbf")
+lifesteal_percentage = 0.1
+
+[sub_resource type="Resource" id="Resource_0ek85"]
+script = ExtResource("6_4knp6")
+effect_to_apply = SubResource("Resource_prwy5")
+number_of_ticks = 5
+time_between_ticks = 0.5
+
+[sub_resource type="BoxMesh" id="BoxMesh_a0ftc"]
+size = Vector3(0.5, 0.5, 0.5)
+
+[node name="TestArmor" type="Node3D"]
+script = ExtResource("1_ohsqc")
+effects = Array[ExtResource("2_o22d3")]([SubResource("Resource_7oo4m"), SubResource("Resource_7isop"), SubResource("Resource_0ek85")])
+item_id = 1
+
+[node name="MeshInstance3D" type="MeshInstance3D" parent="."]
+mesh = SubResource("BoxMesh_a0ftc")

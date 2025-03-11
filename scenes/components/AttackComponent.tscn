@@ -1,0 +1,13 @@
+[gd_scene load_steps=5 format=3 uid="uid://cvx5nhcif18qf"]
+
+[ext_resource type="Script" path="res://scripts/components/AttackComponent.gd" id="1_1aesn"]
+[ext_resource type="Script" path="res://scripts/interfaces/IEffect.gd" id="2_wuc1c"]
+[ext_resource type="Script" path="res://scripts/resources/AttackPayload.gd" id="3_ja4ya"]
+
+[sub_resource type="Resource" id="Resource_sdx4l"]
+script = ExtResource("3_ja4ya")
+attacking_effects = Array[ExtResource("2_wuc1c")]([])
+
+[node name="Area3d" type="Area3D"]
+script = ExtResource("1_1aesn")
+base_attack_payload = SubResource("Resource_sdx4l")
