@@ -8,7 +8,10 @@ const IEffectable = preload("res://scripts/interfaces/IEffectable.gd")
 
 var base_most_recent_hit: HitContext = null
 var modified_most_recent_hit: HitContext = null
-var entity_id: int
+var entity_id: int = -1
+
+func _enter_tree() -> void:
+	self.set_multiplayer_authority(1)
 
 func hit(attack_payload: AttackPayload):
 	if not is_multiplayer_authority():
@@ -25,7 +28,10 @@ func add_modifier(modifier):
 	modifiers.sort_custom(IModifier.compare_modifier_by_pritority)
 
 func set_id(id: int):
-	entity_id = id
+	self.entity_id = id
+	
+func get_id() -> int:
+	return self.entity_id
 
 # Removes a modifier.
 func remove_modifier(modifier):

@@ -11,8 +11,12 @@ const IEffectable = preload("res://scripts/interfaces/IEffectable.gd")
 @export var items: Array[Item]
 
 @export var player_id: int
+func _enter_tree() -> void:
+	self.set_multiplayer_authority(1)
 
 func _ready() -> void:
+	if not is_multiplayer_authority():
+		return
 	# Populate components and items from the node tree
 	player_id = Globals.get_new_id()
 	_populate_components(self)

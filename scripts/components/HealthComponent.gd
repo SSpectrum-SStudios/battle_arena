@@ -6,7 +6,7 @@ const IEffectable = preload("res://scripts/interfaces/IEffectable.gd")
 
 @export var health: HealthResource = HealthResource.new()
 @export var modifiers: Array[IModifier] = []
-@export var entity_id: int
+@export var entity_id: int = -1
 
 var modified_health_cached : HealthResource
 
@@ -58,7 +58,13 @@ func add_effect(effect: IEffect):
 	effect.apply_effect(self)
 
 func set_id(id: int):
-	entity_id = id
+	self.entity_id = id
+	
+func get_id() -> int:
+	return self.entity_id
+	
+func _enter_tree() -> void:
+	self.set_multiplayer_authority(1)
 
 func _ready() -> void:
 	health.current_health = health.max_health

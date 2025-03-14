@@ -42,7 +42,7 @@ class LifeStealEffectNode extends IEffectNode:
 	func apply_effect(target: Node):
 		self.target = target as HealthComponent
 		# Assumes HealthComponent has a entity_id property
-		self.entity_id = self.target.entity_id
+		self.entity_id = self.target.get_id()
 		Globals.on_damage_taken.connect(self._on_damage_taken)
 
 	# Cleans up the effect by disconnecting the signal and freeing the node

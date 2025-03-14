@@ -8,7 +8,7 @@
 script = ExtResource("1_0rmmu")
 damage_amount = 5.0
 damage_type = 0
-attacker_id = 1
+attacker_id = 0
 
 [sub_resource type="Resource" id="Resource_wnem2"]
 script = ExtResource("1_ues38")
