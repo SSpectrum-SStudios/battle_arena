@@ -1,0 +1,6 @@
+[gd_scene load_steps=2 format=3 uid="uid://cyc5t8peut8eg"]
+
+[ext_resource type="Script" uid="uid://cm4u13bjep4eg" path="res://scripts/itemSlots/Slot.gd" id="1_hqlyo"]
+
+[node name="Hand" type="Marker3D"]
+script = ExtResource("1_hqlyo")

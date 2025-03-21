@@ -2,12 +2,12 @@
 
 [ext_resource type="ArrayMesh" uid="uid://ckfypdwpma21m" path="res://models/items/weapons/model.obj" id="1_dabtb"]
 [ext_resource type="PackedScene" uid="uid://cvx5nhcif18qf" path="res://scenes/components/AttackComponent.tscn" id="2_4gbkv"]
-[ext_resource type="Script" path="res://scripts/items/Item.gd" id="2_mil44"]
-[ext_resource type="Script" path="res://scripts/interfaces/IEffect.gd" id="4_3okkj"]
+[ext_resource type="Script" uid="uid://dgg8xoatq73mw" path="res://scripts/items/ItemData.gd" id="2_mil44"]
+[ext_resource type="Script" uid="uid://g3peqne44a8" path="res://scripts/interfaces/IEffect.gd" id="4_3okkj"]
 [ext_resource type="Resource" uid="uid://dw486x84e0fce" path="res://resources/effects/DamageOverTimeEffect.tres" id="5_q6p6b"]
-[ext_resource type="Script" path="res://scripts/resources/AttackPayload.gd" id="7_3vhvf"]
-[ext_resource type="Script" path="res://scripts/interfaces/IModifier.gd" id="7_nkf2v"]
-[ext_resource type="Script" path="res://scripts/modifiers/PhysicalDamageAugmentModifer.gd" id="8_iex0h"]
+[ext_resource type="Script" uid="uid://bglmpdnpxfgd1" path="res://scripts/resources/AttackPayload.gd" id="7_3vhvf"]
+[ext_resource type="Script" uid="uid://b7ri3fky01x3w" path="res://scripts/interfaces/IModifier.gd" id="7_nkf2v"]
+[ext_resource type="Script" uid="uid://cc3xm74uu8hwx" path="res://scripts/modifiers/PhysicalDamageAugmentModifer.gd" id="8_iex0h"]
 
 [sub_resource type="Resource" id="Resource_5sxhu"]
 script = ExtResource("7_3vhvf")

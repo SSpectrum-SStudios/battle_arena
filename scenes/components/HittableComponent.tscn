@@ -1,6 +1,6 @@
 [gd_scene load_steps=2 format=3 uid="uid://bty83draq4s3b"]
 
-[ext_resource type="Script" path="res://scripts/components/HittableComponent.gd" id="2_33dh0"]
+[ext_resource type="Script" uid="uid://cqhvhdqmcihsk" path="res://scripts/components/HittableComponent.gd" id="2_33dh0"]
 
 [node name="IHittable" type="Area3D"]
 script = ExtResource("2_33dh0")

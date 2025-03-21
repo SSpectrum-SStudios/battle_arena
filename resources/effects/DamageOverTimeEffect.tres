@@ -1,14 +1,14 @@
 [gd_resource type="Resource" script_class="IntervalEffect" load_steps=6 format=3 uid="uid://dw486x84e0fce"]
 
-[ext_resource type="Script" path="res://scripts/resources/DamageContext.gd" id="1_0rmmu"]
-[ext_resource type="Script" path="res://scripts/effects/IntervalEffect.gd" id="1_83wh3"]
-[ext_resource type="Script" path="res://scripts/effects/SingleDamageEffect.gd" id="1_ues38"]
+[ext_resource type="Script" uid="uid://dro5x5gn5woo8" path="res://scripts/resources/DamageContext.gd" id="1_0rmmu"]
+[ext_resource type="Script" uid="uid://cvgyxrloygalv" path="res://scripts/effects/IntervalEffect.gd" id="1_83wh3"]
+[ext_resource type="Script" uid="uid://cv3f3urngyyw1" path="res://scripts/effects/SingleDamageEffect.gd" id="1_ues38"]
 
 [sub_resource type="Resource" id="Resource_ou1jk"]
 script = ExtResource("1_0rmmu")
 damage_amount = 5.0
 damage_type = 0
-attacker_id = 1
+attacker_id = 0
 
 [sub_resource type="Resource" id="Resource_wnem2"]
 script = ExtResource("1_ues38")

@@ -1,32 +1,36 @@
 [gd_scene load_steps=11 format=3 uid="uid://flt0yan8li6v"]
 
-[ext_resource type="Script" path="res://scripts/PlayerController.gd" id="1_mnjil"]
-[ext_resource type="Script" path="res://scripts/MovementController.gd" id="1_n6iyu"]
+[ext_resource type="Script" uid="uid://c62xb3ubre833" path="res://scripts/PlayerController.gd" id="1_mnjil"]
+[ext_resource type="Script" uid="uid://deo6cistpystw" path="res://scripts/MovementController.gd" id="1_n6iyu"]
 [ext_resource type="PackedScene" uid="uid://b5kyjblko1jju" path="res://scenes/components/HealthComponent.tscn" id="2_f4vpr"]
 [ext_resource type="PackedScene" uid="uid://cjb4gcocabkal" path="res://scenes/items/weapons/BasicSword.tscn" id="3_7fklq"]
 [ext_resource type="PackedScene" uid="uid://cw65pvypaey0g" path="res://scenes/items/armor/TestArmor.tscn" id="3_u7xob"]
-[ext_resource type="Script" path="res://scripts/components/HittableComponent.gd" id="4_75dfu"]
-[ext_resource type="Script" path="res://scripts/resources/HealthResource.gd" id="4_x02dg"]
+[ext_resource type="Script" uid="uid://cqhvhdqmcihsk" path="res://scripts/components/HittableComponent.gd" id="4_75dfu"]
+[ext_resource type="Script" uid="uid://d2whptdmpi3jr" path="res://scripts/resources/HealthResource.gd" id="4_x02dg"]
 [ext_resource type="Shape3D" uid="uid://bef6iowkp4wt1" path="res://resources/PlayerShape.tres" id="12_v4vd5"]
 
 [sub_resource type="Resource" id="Resource_eg4qn"]
+resource_local_to_scene = true
 script = ExtResource("4_x02dg")
 max_health = 100.0
 current_health = 0.0
 
-[sub_resource type="SceneReplicationConfig" id="SceneReplicationConfig_6nqdd"]
+[sub_resource type="SceneReplicationConfig" id="SceneReplicationConfig_km1et"]
 properties/0/path = NodePath(".:position")
 properties/0/spawn = true
 properties/0/replication_mode = 1
 properties/1/path = NodePath(".:rotation")
 properties/1/spawn = true
 properties/1/replication_mode = 1
-properties/2/path = NodePath("Head:rotation")
+properties/2/path = NodePath("Player_Controller/Head:rotation")
 properties/2/spawn = true
 properties/2/replication_mode = 1
-properties/3/path = NodePath("Head/HandSlot1:position")
+properties/3/path = NodePath("Player_Controller/Head/HandSlot1:position")
 properties/3/spawn = true
 properties/3/replication_mode = 1
+properties/4/path = NodePath("Player_Controller/Head/HandSlot1:rotation")
+properties/4/spawn = true
+properties/4/replication_mode = 1
 
 [node name="EntPlayer" type="CharacterBody3D"]
 script = ExtResource("1_n6iyu")
@@ -36,7 +40,6 @@ script = ExtResource("1_mnjil")
 
 [node name="HealthComponent" parent="Player_Controller" instance=ExtResource("2_f4vpr")]
 health = SubResource("Resource_eg4qn")
-player_id = 1
 
 [node name="ArmorSlot" type="Marker3D" parent="Player_Controller"]
 
@@ -52,6 +55,7 @@ transform = Transform3D(1, 0, 0, 0, 0.790476, 0.612493, 0, -0.612493, 0.790476, 
 [node name="BasicSword" parent="Player_Controller/Head/HandSlot1" instance=ExtResource("3_7fklq")]
 
 [node name="Camera3D" type="Camera3D" parent="Player_Controller/Head"]
+unique_name_in_owner = true
 
 [node name="HittableComponent" type="Area3D" parent="Player_Controller"]
 script = ExtResource("4_75dfu")
@@ -63,4 +67,4 @@ shape = ExtResource("12_v4vd5")
 shape = ExtResource("12_v4vd5")
 
 [node name="MultiplayerSynchronizer" type="MultiplayerSynchronizer" parent="."]
-replication_config = SubResource("SceneReplicationConfig_6nqdd")
+replication_config = SubResource("SceneReplicationConfig_km1et")

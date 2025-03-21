@@ -1,9 +1,9 @@
 [gd_scene load_steps=8 format=3 uid="uid://c83vr3lx66x4c"]
 
-[ext_resource type="Script" path="res://scripts/sphere_enemy_test.gd" id="1_dntt3"]
+[ext_resource type="Script" uid="uid://3ybhbi0wieju" path="res://scripts/sphere_enemy_test.gd" id="1_dntt3"]
 [ext_resource type="PackedScene" uid="uid://bty83draq4s3b" path="res://scenes/components/HittableComponent.tscn" id="3_67fln"]
 [ext_resource type="PackedScene" uid="uid://b5kyjblko1jju" path="res://scenes/components/HealthComponent.tscn" id="3_bl228"]
-[ext_resource type="Script" path="res://scripts/resources/HealthResource.gd" id="3_t6lee"]
+[ext_resource type="Script" uid="uid://d2whptdmpi3jr" path="res://scripts/resources/HealthResource.gd" id="3_t6lee"]
 
 [sub_resource type="Resource" id="Resource_wfblr"]
 resource_local_to_scene = true
