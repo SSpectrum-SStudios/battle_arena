@@ -1,12 +1,12 @@
 [gd_scene load_steps=11 format=3 uid="uid://flt0yan8li6v"]
 
-[ext_resource type="Script" path="res://scripts/PlayerController.gd" id="1_mnjil"]
-[ext_resource type="Script" path="res://scripts/MovementController.gd" id="1_n6iyu"]
+[ext_resource type="Script" uid="uid://c62xb3ubre833" path="res://scripts/PlayerController.gd" id="1_mnjil"]
+[ext_resource type="Script" uid="uid://deo6cistpystw" path="res://scripts/MovementController.gd" id="1_n6iyu"]
 [ext_resource type="PackedScene" uid="uid://b5kyjblko1jju" path="res://scenes/components/HealthComponent.tscn" id="2_f4vpr"]
 [ext_resource type="PackedScene" uid="uid://cjb4gcocabkal" path="res://scenes/items/weapons/BasicSword.tscn" id="3_7fklq"]
 [ext_resource type="PackedScene" uid="uid://cw65pvypaey0g" path="res://scenes/items/armor/TestArmor.tscn" id="3_u7xob"]
-[ext_resource type="Script" path="res://scripts/components/HittableComponent.gd" id="4_75dfu"]
-[ext_resource type="Script" path="res://scripts/resources/HealthResource.gd" id="4_x02dg"]
+[ext_resource type="Script" uid="uid://cqhvhdqmcihsk" path="res://scripts/components/HittableComponent.gd" id="4_75dfu"]
+[ext_resource type="Script" uid="uid://d2whptdmpi3jr" path="res://scripts/resources/HealthResource.gd" id="4_x02dg"]
 [ext_resource type="Shape3D" uid="uid://bef6iowkp4wt1" path="res://resources/PlayerShape.tres" id="12_v4vd5"]
 
 [sub_resource type="Resource" id="Resource_eg4qn"]

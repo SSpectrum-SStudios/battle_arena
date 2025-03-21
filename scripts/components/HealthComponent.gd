@@ -35,6 +35,7 @@ var modified_health_cached : HealthResource
 		modified_health_cached.current_health = value 
 		
 signal health_at_zero
+
 # Adds a modifier (an object that adheres to IModifier)
 func add_modifier(modifier: IModifier):
 	modifiers.append(modifier)

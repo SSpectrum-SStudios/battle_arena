@@ -1,10 +1,10 @@
 [gd_scene load_steps=10 format=3 uid="uid://cw65pvypaey0g"]
 
-[ext_resource type="Script" path="res://scripts/items/Item.gd" id="1_ohsqc"]
-[ext_resource type="Script" path="res://scripts/interfaces/IEffect.gd" id="2_o22d3"]
-[ext_resource type="Script" path="res://scripts/effects/SingleDamageEffect.gd" id="4_1p32w"]
-[ext_resource type="Script" path="res://scripts/resources/DamageContext.gd" id="4_h37h6"]
-[ext_resource type="Script" path="res://scripts/effects/LifeStealEffect.gd" id="8_5mpbf"]
+[ext_resource type="Script" uid="uid://dgg8xoatq73mw" path="res://scripts/items/ItemData.gd" id="1_ohsqc"]
+[ext_resource type="Script" uid="uid://g3peqne44a8" path="res://scripts/interfaces/IEffect.gd" id="2_o22d3"]
+[ext_resource type="Script" uid="uid://cv3f3urngyyw1" path="res://scripts/effects/SingleDamageEffect.gd" id="4_1p32w"]
+[ext_resource type="Script" uid="uid://dro5x5gn5woo8" path="res://scripts/resources/DamageContext.gd" id="4_h37h6"]
+[ext_resource type="Script" uid="uid://bf86jqe3n23vy" path="res://scripts/effects/LifeStealEffect.gd" id="8_5mpbf"]
 
 [sub_resource type="Resource" id="Resource_40dly"]
 script = ExtResource("4_h37h6")
