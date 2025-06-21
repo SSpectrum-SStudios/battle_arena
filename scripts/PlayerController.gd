@@ -8,7 +8,7 @@ const IEffectable = preload("res://scripts/interfaces/IEffectable.gd")
 @export var components: Array[Node]
 
 # Array of items
-@export var items: Array[Item]
+@export var items: Array[ItemData]
 
 @export var player_id: int
 func _enter_tree() -> void:
@@ -20,7 +20,7 @@ func _ready() -> void:
 	# Populate components and items from the node tree
 	player_id = Globals.get_new_id()
 	_populate_components(self)
-	_populate_items(self)
+	#_populate_items(self)
 	Globals.hit_received.connect(self.receive_hit_test)
 	
 	# Get effects from items and distribute them
@@ -45,12 +45,12 @@ func _populate_components(node: Node) -> void:
 			_populate_components(child)
 
 # Recursively find all Item nodes in the node tree
-func _populate_items(node: Node) -> void:
-	for child in node.get_children():
-		if child is Item:
-			items.append(child)
-		if child.get_child_count() > 0:
-			_populate_items(child)
+#func _populate_items(node: Node) -> void:
+	#for child in node.get_children():
+		#if child is Item:
+			#items.append(child)
+		#if child.get_child_count() > 0:
+			#_populate_items(child)
 			
 func receive_hit_test(context: HitContext):
 	if context.hit_entity_id == player_id:

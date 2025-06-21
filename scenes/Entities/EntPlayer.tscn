@@ -1,12 +1,12 @@
-[gd_scene load_steps=11 format=3 uid="uid://flt0yan8li6v"]
+[gd_scene load_steps=12 format=3 uid="uid://flt0yan8li6v"]
 
 [ext_resource type="Script" uid="uid://c62xb3ubre833" path="res://scripts/PlayerController.gd" id="1_mnjil"]
 [ext_resource type="Script" uid="uid://deo6cistpystw" path="res://scripts/MovementController.gd" id="1_n6iyu"]
 [ext_resource type="PackedScene" uid="uid://b5kyjblko1jju" path="res://scenes/components/HealthComponent.tscn" id="2_f4vpr"]
-[ext_resource type="PackedScene" uid="uid://cjb4gcocabkal" path="res://scenes/items/weapons/BasicSword.tscn" id="3_7fklq"]
-[ext_resource type="PackedScene" uid="uid://cw65pvypaey0g" path="res://scenes/items/armor/TestArmor.tscn" id="3_u7xob"]
 [ext_resource type="Script" uid="uid://cqhvhdqmcihsk" path="res://scripts/components/HittableComponent.gd" id="4_75dfu"]
 [ext_resource type="Script" uid="uid://d2whptdmpi3jr" path="res://scripts/resources/HealthResource.gd" id="4_x02dg"]
+[ext_resource type="PackedScene" uid="uid://cyc5t8peut8eg" path="res://scenes/itemSlots/Hand.tscn" id="6_68uvh"]
+[ext_resource type="Resource" uid="uid://ci0tb0s33ri7x" path="res://resources/items/weapons/BasicSword.tres" id="7_rev62"]
 [ext_resource type="Shape3D" uid="uid://bef6iowkp4wt1" path="res://resources/PlayerShape.tres" id="12_v4vd5"]
 
 [sub_resource type="Resource" id="Resource_eg4qn"]
@@ -14,6 +14,8 @@ resource_local_to_scene = true
 script = ExtResource("4_x02dg")
 max_health = 100.0
 current_health = 0.0
+
+[sub_resource type="AnimationLibrary" id="AnimationLibrary_rev62"]
 
 [sub_resource type="SceneReplicationConfig" id="SceneReplicationConfig_km1et"]
 properties/0/path = NodePath(".:position")
@@ -31,6 +33,15 @@ properties/3/replication_mode = 1
 properties/4/path = NodePath("Player_Controller/Head/HandSlot1:rotation")
 properties/4/spawn = true
 properties/4/replication_mode = 1
+properties/5/path = NodePath("Player_Controller/Head/HandPivot/Hand:position")
+properties/5/spawn = true
+properties/5/replication_mode = 1
+properties/6/path = NodePath("Player_Controller/Head/HandPivot/Hand:rotation")
+properties/6/spawn = true
+properties/6/replication_mode = 1
+properties/7/path = NodePath("Player_Controller/Head/HandPivot:rotation")
+properties/7/spawn = true
+properties/7/replication_mode = 1
 
 [node name="EntPlayer" type="CharacterBody3D"]
 script = ExtResource("1_n6iyu")
@@ -43,19 +54,25 @@ health = SubResource("Resource_eg4qn")
 
 [node name="ArmorSlot" type="Marker3D" parent="Player_Controller"]
 
-[node name="TestArmor" parent="Player_Controller/ArmorSlot" instance=ExtResource("3_u7xob")]
-
 [node name="Head" type="Node3D" parent="Player_Controller"]
 unique_name_in_owner = true
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.838409, 0)
 
-[node name="HandSlot1" type="Marker3D" parent="Player_Controller/Head"]
-transform = Transform3D(1, 0, 0, 0, 0.790476, 0.612493, 0, -0.612493, 0.790476, 0.545632, -0.425858, -1.07795)
-
-[node name="BasicSword" parent="Player_Controller/Head/HandSlot1" instance=ExtResource("3_7fklq")]
-
 [node name="Camera3D" type="Camera3D" parent="Player_Controller/Head"]
 unique_name_in_owner = true
+
+[node name="HandPivot" type="Node3D" parent="Player_Controller/Head"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.4, 0)
+
+[node name="Hand" parent="Player_Controller/Head/HandPivot" node_paths=PackedStringArray("slot_animation_player") instance=ExtResource("6_68uvh")]
+transform = Transform3D(-0.676771, 0.19698, -0.709352, 0.549412, 0.776494, -0.308553, 0.490029, -0.598546, -0.633731, 0.682, 0, -0.737)
+item = ExtResource("7_rev62")
+slot_animation_player = NodePath("../../AttackAnimationPlayer")
+
+[node name="AttackAnimationPlayer" type="AnimationPlayer" parent="Player_Controller/Head"]
+libraries = {
+&"": SubResource("AnimationLibrary_rev62")
+}
 
 [node name="HittableComponent" type="Area3D" parent="Player_Controller"]
 script = ExtResource("4_75dfu")
@@ -68,3 +85,5 @@ shape = ExtResource("12_v4vd5")
 
 [node name="MultiplayerSynchronizer" type="MultiplayerSynchronizer" parent="."]
 replication_config = SubResource("SceneReplicationConfig_km1et")
+
+[editable path="Player_Controller/Head/HandPivot/Hand"]

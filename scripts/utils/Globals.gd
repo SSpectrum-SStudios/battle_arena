@@ -16,6 +16,28 @@ enum ModifierPriority {
 	LOWEST = 4,
 }
 
+enum SlotType {
+	HAND = 0,
+	HELM = 1,
+	TORSO = 2,
+	FEET = 3,
+	EXTRA1 = 4,
+	EXTRA2 = 5,
+	EXTRA3 = 6,
+	EXTRA4 = 7
+}
+
+var AbilityHotKeyDict : Dictionary[SlotType, String] = {
+	SlotType.HAND: "activate_hand",
+	SlotType.HELM: "activate_helm",
+	SlotType.TORSO: "activate_torso",
+	SlotType.FEET: "activate_feet",
+	SlotType.EXTRA1: "activate_extra1",
+	SlotType.EXTRA2: "activate_extra2",
+	SlotType.EXTRA3: "activate_extra3",
+	SlotType.EXTRA4: "activate_extra4",
+}
+
 ## Signals
 signal on_damage_taken(damage_context: DamageContext)
 signal hit_received(hit_context: HitContext)
