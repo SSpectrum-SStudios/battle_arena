@@ -25,7 +25,6 @@ func modify(value: Resource) -> Resource:
 				
 	return value
 	
-
 func modifiable_is_compatible(modifiable) -> bool:
 	return modifiable is AttackComponent
 

@@ -31,7 +31,7 @@ var modified_health_cached : HealthResource
 @export var synced_mod_current_health: float: 
 	get:
 		return modified_health_cached.current_health
-	set(value):
+	set(value):	
 		modified_health_cached.current_health = value 
 		
 signal health_at_zero

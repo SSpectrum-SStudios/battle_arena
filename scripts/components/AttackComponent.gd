@@ -43,6 +43,7 @@ func add_effect(effect: IEffect):
 func set_id(id: int):
 	self.entity_id = id
 	modifiers.append(ApplyAttackingIDmodifier.new(self.entity_id))
+	modifiers.sort_custom(IModifier.compare_modifier_by_pritority)
 	
 func get_id() -> int:
 	return self.entity_id

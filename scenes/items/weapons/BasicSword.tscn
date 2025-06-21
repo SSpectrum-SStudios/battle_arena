@@ -1,8 +1,10 @@
-[gd_scene load_steps=12 format=3 uid="uid://cjb4gcocabkal"]
+[gd_scene load_steps=14 format=3 uid="uid://cjb4gcocabkal"]
 
 [ext_resource type="ArrayMesh" uid="uid://ckfypdwpma21m" path="res://models/items/weapons/model.obj" id="1_dabtb"]
+[ext_resource type="Script" uid="uid://c116lesvye7h1" path="res://scripts/items/weapons/BasicSword.gd" id="1_lrgo2"]
 [ext_resource type="PackedScene" uid="uid://cvx5nhcif18qf" path="res://scenes/components/AttackComponent.tscn" id="2_4gbkv"]
-[ext_resource type="Script" uid="uid://dgg8xoatq73mw" path="res://scripts/items/ItemData.gd" id="2_mil44"]
+[ext_resource type="Animation" uid="uid://cg75f46cwp5ki" path="res://resources/items/weapons/animations/basic_sword_animation.anim" id="2_tpr8l"]
+[ext_resource type="Animation" uid="uid://dstyyqwldiyaf" path="res://resources/items/weapons/animations/sword_reset.anim" id="3_6cltq"]
 [ext_resource type="Script" uid="uid://g3peqne44a8" path="res://scripts/interfaces/IEffect.gd" id="4_3okkj"]
 [ext_resource type="Resource" uid="uid://dw486x84e0fce" path="res://resources/effects/DamageOverTimeEffect.tres" id="5_q6p6b"]
 [ext_resource type="Script" uid="uid://bglmpdnpxfgd1" path="res://scripts/resources/AttackPayload.gd" id="7_3vhvf"]
@@ -21,11 +23,16 @@ augment_amount = 10.0
 [sub_resource type="BoxShape3D" id="BoxShape3D_pb82s"]
 size = Vector3(0.16, 1.245, 0.09)
 
-[node name="BasicSword" type="MeshInstance3D"]
+[node name="Item" type="Node3D"]
+script = ExtResource("1_lrgo2")
+ability_animation = ExtResource("2_tpr8l")
+reset_animation = ExtResource("3_6cltq")
+
+[node name="BasicSword" type="MeshInstance3D" parent="."]
 mesh = ExtResource("1_dabtb")
-script = ExtResource("2_mil44")
 
 [node name="AttackComponent" parent="." instance=ExtResource("2_4gbkv")]
+monitoring = false
 base_attack_payload = SubResource("Resource_5sxhu")
 modifiers = Array[ExtResource("7_nkf2v")]([SubResource("Resource_ujjan")])
 
