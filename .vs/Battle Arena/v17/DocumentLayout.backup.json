@@ -1,12 +1,88 @@
 {
   "Version": 1,
   "WorkspaceRootPath": "D:\\Godot_Projects\\battle_arena\\",
-  "Documents": [],
+  "Documents": [
+    {
+      "AbsoluteMoniker": "D:0:0:{36D636D9-168B-41FA-802C-EC7D8C62EB85}|Battle Arena.csproj|d:\\godot_projects\\battle_arena\\scripts\\utils\\effectconverter.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{36D636D9-168B-41FA-802C-EC7D8C62EB85}|Battle Arena.csproj|solutionrelative:scripts\\utils\\effectconverter.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{36D636D9-168B-41FA-802C-EC7D8C62EB85}|Battle Arena.csproj|d:\\godot_projects\\battle_arena\\scripts\\items\\defaultitemfactory.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{36D636D9-168B-41FA-802C-EC7D8C62EB85}|Battle Arena.csproj|solutionrelative:scripts\\items\\defaultitemfactory.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{36D636D9-168B-41FA-802C-EC7D8C62EB85}|Battle Arena.csproj|d:\\godot_projects\\battle_arena\\scripts\\utils\\effectregistry.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{36D636D9-168B-41FA-802C-EC7D8C62EB85}|Battle Arena.csproj|solutionrelative:scripts\\utils\\effectregistry.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{36D636D9-168B-41FA-802C-EC7D8C62EB85}|Battle Arena.csproj|d:\\godot_projects\\battle_arena\\scripts\\effects\\basedamagingeffect.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{36D636D9-168B-41FA-802C-EC7D8C62EB85}|Battle Arena.csproj|solutionrelative:scripts\\effects\\basedamagingeffect.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    }
+  ],
   "DocumentGroupContainers": [
     {
       "Orientation": 0,
       "VerticalTabListWidth": 256,
-      "DocumentGroups": []
+      "DocumentGroups": [
+        {
+          "DockedWidth": 200,
+          "SelectedChildIndex": 0,
+          "Children": [
+            {
+              "$type": "Document",
+              "DocumentIndex": 0,
+              "Title": "EffectConverter.cs",
+              "DocumentMoniker": "D:\\Godot_Projects\\battle_arena\\scripts\\utils\\EffectConverter.cs",
+              "RelativeDocumentMoniker": "scripts\\utils\\EffectConverter.cs",
+              "ToolTip": "D:\\Godot_Projects\\battle_arena\\scripts\\utils\\EffectConverter.cs",
+              "RelativeToolTip": "scripts\\utils\\EffectConverter.cs",
+              "ViewState": "AgIAADMAAAAAAAAAAAAowAAAAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2025-07-06T20:05:09.712Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 1,
+              "Title": "DefaultItemFactory.cs",
+              "DocumentMoniker": "D:\\Godot_Projects\\battle_arena\\scripts\\items\\DefaultItemFactory.cs",
+              "RelativeDocumentMoniker": "scripts\\items\\DefaultItemFactory.cs",
+              "ToolTip": "D:\\Godot_Projects\\battle_arena\\scripts\\items\\DefaultItemFactory.cs",
+              "RelativeToolTip": "scripts\\items\\DefaultItemFactory.cs",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAAB8AAAAEAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2025-07-06T20:03:55.885Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 3,
+              "Title": "BaseDamagingEffect.cs",
+              "DocumentMoniker": "D:\\Godot_Projects\\battle_arena\\scripts\\effects\\BaseDamagingEffect.cs",
+              "RelativeDocumentMoniker": "scripts\\effects\\BaseDamagingEffect.cs",
+              "ToolTip": "D:\\Godot_Projects\\battle_arena\\scripts\\effects\\BaseDamagingEffect.cs",
+              "RelativeToolTip": "scripts\\effects\\BaseDamagingEffect.cs",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAAAYAAAABAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2025-07-06T20:01:24.966Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 2,
+              "Title": "EffectRegistry.cs",
+              "DocumentMoniker": "D:\\Godot_Projects\\battle_arena\\scripts\\utils\\EffectRegistry.cs",
+              "RelativeDocumentMoniker": "scripts\\utils\\EffectRegistry.cs",
+              "ToolTip": "D:\\Godot_Projects\\battle_arena\\scripts\\utils\\EffectRegistry.cs",
+              "RelativeToolTip": "scripts\\utils\\EffectRegistry.cs",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2025-07-06T20:01:05.298Z",
+              "EditorCaption": ""
+            }
+          ]
+        }
+      ]
     }
   ]
 }

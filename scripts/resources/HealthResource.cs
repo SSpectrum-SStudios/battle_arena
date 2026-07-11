@@ -13,16 +13,19 @@ namespace BattleArena.scripts.resources
         public float MaxHealth
         {
             get { return MaxHealth; }
-            set { MaxHealth = value;
+            set { _maxHealth = value;
                 EmitChanged();
             }
         }
         public float CurrentHealth
         {
             get { return CurrentHealth; }
-            set { CurrentHealth = value;
+            set { _currentHealth = value;
                 EmitChanged();
             }
         }
+
+        private float _maxHealth;
+        private float _currentHealth;
     }
 }

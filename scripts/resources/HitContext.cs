@@ -12,12 +12,15 @@ namespace BattleArena.scripts.resources
         public int HitEntityID
         {
             get { return HitEntityID; }
-            set { HitEntityID = value; EmitChanged(); }
+            set { _hitEntityID = value; EmitChanged(); }
         }
         public AttackPayload AttackPayload
         {
             get { return AttackPayload; }
-            set { AttackPayload = value; EmitChanged(); }
+            set { _attackPayload = value; EmitChanged(); }
         }
+
+        private int _hitEntityID;
+        private AttackPayload _attackPayload;
     }
 }
