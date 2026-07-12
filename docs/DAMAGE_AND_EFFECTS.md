@@ -47,6 +47,8 @@ A damage event should be able to carry at least:
 
 The architecture should allow an item to create unusual authored outcomes, including fixed damage, ranged damage, critical or probabilistic damage, damage over time, and conditional damage.
 
+Authored or source-modified damage that falls below zero is normalized to zero. Negative damage is not used as an implicit representation of healing. Type-specific resistance above 100% produces a separate explicit healing outcome using only the excess resistance beyond 100%.
+
 A single attack or effect may contain multiple damage types. As builds accumulate items, mixed damage is expected to become common. Each typed portion should be resolved against the target's applicable resistance so, for example, Physical damage can harm a target while Fire damage from the same attack heals them.
 
 ## Effects and Modifications
@@ -156,6 +158,46 @@ Item descriptions and trigger definitions should say which event they use. "When
 Healing created by over-resistance counts as actual health gained and can contribute to `HealthGained` triggers. Whether it also counts as a healing effect for `HealingApplied` triggers should be explicitly chosen by the authored effect or event tags rather than assumed globally.
 
 Sliding-window triggers such as "gain X health within the last second" should aggregate timestamped resolved health changes. Healing-reduction effects naturally influence these triggers because they change the amount of health actually gained.
+
+## Atomic Net Health Resolution
+
+All damage and healing portions belonging to one resolved packet combine into one atomic net health change:
+
+```text
+Net health change = total resolved healing - total resolved damage
+```
+
+The combatant's health does not move through intermediate damage and healing states while that packet commits. For example, a combatant at 10 health receiving 20 damage and 30 healing ends at 20 health, not 30:
+
+```text
+10 + (30 - 20) = 20
+```
+
+Raw resolution facts remain available independently:
+
+- Total damage resolved.
+- Total healing resolved.
+- Net health change.
+- Actual health gained after the atomic commit and maximum-health clamp.
+- Actual health lost after the atomic commit and minimum-health handling.
+
+This allows precise triggers. `DamageResolved` and `HealingApplied` can occur even when they cancel one another, while `HealthGained` and `HealthLost` reflect only the actual atomic change in stored health.
+
+Death or elimination is evaluated after the entire packet's net health change is calculated. No intermediate portion can kill, revive, or cross a health threshold independently within the same packet.
+
+After applying the atomic net change, stored current health clamps to a minimum of zero. The immutable result separately records overkill—the amount by which the unclamped result fell below zero—so authored triggers, abilities, statistics, and presentation can use it.
+
+For example:
+
+```text
+Current health:       20
+Atomic net damage:    75
+Unclamped result:    -55
+Stored health:         0
+Recorded overkill:    55
+```
+
+Ordinary healing does not revive an eliminated combatant. Resurrection, if introduced, must be an explicit authored mechanic rather than a side effect of applying normal healing to zero health.
 
 ## Respawn Interaction
 
