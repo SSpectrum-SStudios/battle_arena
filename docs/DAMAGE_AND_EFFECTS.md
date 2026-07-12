@@ -73,6 +73,17 @@ Modifiable effect properties may include:
 
 Modifications may apply broadly—such as all poison effects owned by the player—or narrowly to effects matching specific tags, sources, or conditions.
 
+Active effects remain modifiable after application. An authored area ability may locate all poison-tagged active effects in a radius and change their damage, remaining duration, interval, or other exposed properties. The affected poison instances remain independent; the area ability owns the matching and modification behavior.
+
+Spatial and allegiance filters are item-defined. An effect may target only the owner's poison, allies' poison, enemies' poison, or every poison instance in range. Godot performs or assists with spatial discovery, while the core applies deterministic effect-matching and modification rules using stable runtime IDs.
+
+The authored modifier also defines its lifetime:
+
+- Scoped modifiers are removed when the target stops matching, such as leaving a radius.
+- Permanent modifiers remain attached to the active effect for the rest of that effect's lifetime.
+
+Temporary modifiers should be represented as owned contributions rather than destructive changes to base state, allowing their removal to restore the correct effective values.
+
 ## Resistance and Armor
 
 "Armor" is presentation language for effects that reduce damage. It is not an automatic property of an equipment slot.
@@ -131,7 +142,7 @@ Timing and damage are defined by the originating item. A hypothetical Greater Po
 
 Other items can modify these poison effects. A chest-armor item might increase poison tick damage, extend poison duration, shorten the interval between ticks, or alter several of those properties. These modifications should apply through defined matching rules such as effect tags rather than requiring the armor to know about every individual poison weapon.
 
-The system must specify how duration and interval changes affect an effect already attached to a player, including whether the next scheduled tick moves and whether duration extensions are recalculated or appended.
+The system must specify how duration and interval changes affect an effect already attached to a player, including whether the next scheduled tick moves, how duration extensions are applied, and whether temporary modifications revert when their source stops affecting the poison.
 
 ## Healing Events
 

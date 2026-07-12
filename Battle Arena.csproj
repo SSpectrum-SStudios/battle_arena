@@ -4,4 +4,7 @@
     <EnableDynamicLoading>true</EnableDynamicLoading>
     <RootNamespace>BattleArena</RootNamespace>
   </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="src\BattleArena.Core\BattleArena.Core.csproj" />
+  </ItemGroup>
 </Project>
