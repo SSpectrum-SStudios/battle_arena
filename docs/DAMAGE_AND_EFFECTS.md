@@ -146,6 +146,78 @@ Other items can modify these poison effects. A chest-armor item might increase p
 
 The system must specify how duration and interval changes affect an effect already attached to a player, including whether the next scheduled tick moves, how duration extensions are applied, and whether temporary modifications revert when their source stops affecting the poison.
 
+### Authoritative Time Representation
+
+Effect timing uses integer simulation units rather than floating-point elapsed seconds. The initial unit is microseconds. Authored JSON may use readable seconds, which content validation converts to an exact or explicitly rounded integer duration before a match begins.
+
+The authoritative simulation clock advances only while the active arena simulation is running. Paused gameplay and between-round selection do not consume effect intervals, durations, cooldowns, or other simulation-time schedules.
+
+### First-Tick Policy
+
+Periodic definitions explicitly choose one of two first-tick policies:
+
+- Tick immediately when applied.
+- Wait one full effective interval before the first tick.
+
+Waiting one interval is the default, but both behaviors are supported and clearly described by the item.
+
+### Periodic Completion Policies
+
+Periodic effects have two useful completion models.
+
+#### Tick-Count Completion
+
+The effect owns an interval and a number of ticks remaining.
+
+```text
+Interval: 2 seconds
+Tick count: 5
+First tick: after one interval
+Tick times: 2, 4, 6, 8, 10
+```
+
+Advantages:
+
+- The exact number of executions is unambiguous.
+- No interval-versus-expiration boundary decision is required.
+- Total nominal lifetime is easily derived for a fixed interval.
+- Deterministic scheduling and testing are straightforward.
+
+Tradeoffs:
+
+- Changing interval changes total elapsed lifetime when remaining tick count stays fixed.
+- Faster ticks front-load the same remaining executions instead of creating more executions.
+- "Increase duration" must mean adding ticks, changing interval, or another explicit operation.
+- Immediate-first-tick effects have a different elapsed lifetime: five ticks at 0, 2, 4, 6, and 8 seconds.
+
+#### Duration Completion
+
+The effect owns a duration/end time and ticks whenever its interval becomes due during that lifetime.
+
+Advantages:
+
+- The effect exists for an exact authored amount of simulation time.
+- Speeding up its interval naturally produces more ticks in the same duration.
+- Temporary areas, buffs, and debuffs map naturally to duration.
+
+Tradeoffs:
+
+- A boundary policy is required when a tick is due exactly at expiration.
+- Interval changes can alter the eventual number of ticks.
+- Item descriptions may not promise an exact tick count.
+
+#### Confirmed Completion-Policy Model
+
+Definitions explicitly select their completion policy:
+
+- `AfterTickCount` for behavior promising an exact number of executions.
+- `AfterDuration` for behavior promising an exact lifetime.
+- Future persistent effects may use an authored external removal condition instead.
+
+A periodic effect uses one authoritative completion policy, not both tick count and duration as competing termination conditions. User-facing descriptions may display a derived expected duration or expected tick count.
+
+For the first implementation, scheduling tests prove both policies. Poison will become the first gameplay effect using `AfterTickCount`, while a temporary poison-amplification radius can later prove `AfterDuration` in an authored item.
+
 ## Healing Events
 
 The system must distinguish between an attempted healing effect and health actually restored:
@@ -292,6 +364,21 @@ Runtime effects, temporary contributions, and trigger latches reset per life by 
 Equipment-passive contributions remain installed across lives because the item remains equipped. They compile into equipment maximum health before life-scoped runtime contributions are applied.
 
 Maximum-health rescaling may itself cause other health conditions to become true. The rescaling emits a normal immutable effect fact into the explicit chain and activation-budget system; reactions do not execute through recursive property setters.
+
+### Life Generations and Persistent World Objects
+
+Spawning at round start and respawning after death both begin a new life generation. By default, life-scoped state resets cleanly:
+
+- Attached runtime effects.
+- Trigger latches and per-life activation counts.
+- Cooldowns, charges, and item-owned deployment quotas.
+- Other authored per-life resources.
+
+Persistent world objects may outlive the life generation that created them when their definition allows it. Their old existence does not consume the new life's reset deployment quota.
+
+Example: an item permits two active mines per life. A player places two mines, dies, and respawns. The original mines remain, while the new life receives a fresh quota of two and may place two additional mines. Every mine records the source combatant, item instance, and life-generation ID for ownership and diagnostics.
+
+Round cleanup, item replacement, or another authored rule may remove persistent world objects separately. Per-life quota reset does not itself destroy them.
 
 ## Respawn Interaction
 

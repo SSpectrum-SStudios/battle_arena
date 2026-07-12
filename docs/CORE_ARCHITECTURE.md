@@ -876,6 +876,8 @@ Maximum-health state is layered. The combatant owns one immutable base maximum, 
 
 Equipment-passive contributions compile first. Runtime active, triggered, area, and other effect contributions compile afterward. Runtime state resets per life by default unless its authored lifetime explicitly overrides that policy.
 
+Each combatant life receives a match-scoped life-generation ID or sequence. Runtime effects, trigger state, cooldowns, charges, and deployment quotas reference that generation for cleanup and reset. Persistent world objects retain the generation that created them when they survive into a later life.
+
 Does not:
 
 - Calculate an entire attack pipeline.

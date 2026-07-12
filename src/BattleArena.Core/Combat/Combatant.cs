@@ -1,4 +1,5 @@
 using BattleArena.Core.Common;
+using BattleArena.Core.Effects;
 
 namespace BattleArena.Core.Combat;
 
@@ -18,6 +19,7 @@ public sealed class Combatant
         EquipmentMaximumHealth = maximumHealth;
         MaximumHealth = maximumHealth;
         CurrentHealth = maximumHealth;
+        ActiveEffects = new ActiveEffectContainer(id, new LifeGenerationId(1));
     }
 
     public CombatantId Id { get; }
@@ -33,6 +35,8 @@ public sealed class Combatant
     public bool IsEliminated { get; private set; }
 
     public long HealthRevision { get; private set; }
+
+    public ActiveEffectContainer ActiveEffects { get; }
 
     public HealthApplicationResult Apply(CombatResolutionResult resolution)
     {
