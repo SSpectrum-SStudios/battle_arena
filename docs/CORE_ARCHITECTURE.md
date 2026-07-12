@@ -872,6 +872,10 @@ Protects:
 - Respawn restores and clears exactly the state defined by round rules.
 - Owned contributions cannot be removed through another owner's handle.
 
+Maximum-health state is layered. The combatant owns one immutable base maximum, ordered equipment contributions, ordered runtime ability/effect contributions, derived equipment and effective maximum checkpoints, current health, and a revisioned immutable health snapshot. Derived checkpoints are never independently mutated by adapters.
+
+Equipment-passive contributions compile first. Runtime active, triggered, area, and other effect contributions compile afterward. Runtime state resets per life by default unless its authored lifetime explicitly overrides that policy.
+
 Does not:
 
 - Calculate an entire attack pipeline.

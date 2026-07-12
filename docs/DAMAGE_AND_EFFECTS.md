@@ -199,6 +199,100 @@ Recorded overkill:    55
 
 Ordinary healing does not revive an eliminated combatant. Resurrection, if introduced, must be an explicit authored mechanic rather than a side effect of applying normal healing to zero health.
 
+## Maximum-Health Changes During Combat
+
+Items are equipped or replaced only between rounds, but active and passive effects may increase or decrease effective maximum health during combat.
+
+When effective maximum health changes, preserve the combatant's current-health percentage:
+
+```text
+Old state:  50 / 100 = 50%
+New maximum:    200
+New state: 100 / 200 = 50%
+```
+
+This proportional rescaling is a distinct health-state transition. It is not ordinary damage or healing and does not emit `DamageResolved` or `HealingApplied`. Future triggers may explicitly react to maximum-health or proportional-health rescaling facts.
+
+A combatant at zero health remains at zero when maximum health changes. Maximum-health modification cannot revive an eliminated combatant.
+
+Effective maximum health has a minimum valid value of 1 unless a future explicit mechanic introduces another rule. Ordered contributions are evaluated first, then the final compiled maximum is clamped to that minimum.
+
+### Layered Maximum-Health State
+
+A combatant needs several distinct maximum-health values:
+
+- **Base maximum health:** the immutable class or character baseline before items and abilities.
+- **Equipment maximum health:** the compiled result after ordered equipped-item contributions.
+- **Effective maximum health:** the current result after runtime passive, triggered, active, area, and other ability/effect contributions.
+
+These are derived checkpoints, not three independently mutable sources of truth:
+
+```text
+Base maximum health
+    -> ordered equipment contributions
+    = equipment maximum health
+    -> ordered runtime ability/effect contributions
+    = effective maximum health
+```
+
+The authoritative combatant owns the base value, installed contributions, compilation revisions, derived checkpoints, current health, and trigger state. Godot and network clients receive immutable health snapshots rather than separately calculating or mutating maximum health.
+
+A snapshot should expose at least:
+
+- Base maximum health.
+- Equipment maximum health.
+- Effective maximum health.
+- Current health.
+- Health/effect revision.
+- Elimination state.
+
+This supports player-facing stat breakdowns and prevents clients from disagreeing about which layer a threshold references.
+
+### Explicit Health References
+
+Conditions and modifiers must state which health reference they use. Examples include:
+
+- Current health at or below 10% of **base maximum health**.
+- Current health at or below 10% of **equipment maximum health**.
+- Current health at or below 10% of **effective maximum health**.
+- Missing health as a percentage of effective maximum health.
+- Effective maximum health greater than a fixed value.
+
+The denominator is part of the authored definition and item description. The engine must not assume that every phrase such as "10% health" means effective maximum health.
+
+The earlier 10% example uses the immutable, unmodified class baseline. This is only one available authored reference; other effects may explicitly use equipment or effective maximum health.
+
+### Triggered Maximum-Health Passives
+
+A triggered passive may install, remove, or permanently disable a runtime maximum-health contribution.
+
+Example: grow when critically wounded:
+
+```text
+Condition: Current health <= 10% of base maximum health
+Re-entry: Once for the authored reset scope
+Action: Install a runtime maximum-health contribution
+Result: Recompile effective maximum health and preserve current-health percentage
+```
+
+Because the trigger is latched for its reset scope, proportional rescaling does not immediately undo the passive merely because current health rises above the original threshold. The player can subsequently heal toward the larger effective maximum.
+
+Opposite example: lose giant form when critically wounded:
+
+```text
+Initial state: Runtime maximum-health contribution installed
+Condition: Current health <= authored threshold
+Re-entry: Once for the authored reset scope
+Action: Remove or permanently disable that contribution
+Result: Recompile effective maximum health and preserve current-health percentage
+```
+
+Runtime effects, temporary contributions, and trigger latches reset per life by default. An authored definition may explicitly choose another supported lifetime, such as once per round, until the source item is removed, or another future scope.
+
+Equipment-passive contributions remain installed across lives because the item remains equipped. They compile into equipment maximum health before life-scoped runtime contributions are applied.
+
+Maximum-health rescaling may itself cause other health conditions to become true. The rescaling emits a normal immutable effect fact into the explicit chain and activation-budget system; reactions do not execute through recursive property setters.
+
 ## Respawn Interaction
 
 Player-bound temporary effects, including poison-like timed conditions, clear when the affected player respawns. Persistent world objects remain according to their source item's rules.
