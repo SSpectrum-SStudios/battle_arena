@@ -1,0 +1,126 @@
+[gd_scene load_steps=4 format=3]
+
+[ext_resource type="Script" path="res://scripts/multiplayer/NetworkLauncher.cs" id="1_launcher"]
+[ext_resource type="Script" path="res://scripts/multiplayer/GodotEnetTransport.cs" id="2_transport"]
+
+[sub_resource type="StyleBoxFlat" id="StyleBox_panel"]
+bg_color = Color(0.035, 0.05, 0.08, 0.94)
+corner_radius_top_left = 12
+corner_radius_top_right = 12
+corner_radius_bottom_right = 12
+corner_radius_bottom_left = 12
+
+[node name="NetworkLauncher" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("1_launcher")
+
+[node name="EnetTransport" type="Node" parent="."]
+script = ExtResource("2_transport")
+
+[node name="Background" type="ColorRect" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+color = Color(0.12, 0.24, 0.42, 1)
+mouse_filter = 2
+
+[node name="Center" type="CenterContainer" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="Panel" type="PanelContainer" parent="Center"]
+custom_minimum_size = Vector2(560, 0)
+layout_mode = 2
+theme_override_styles/panel = SubResource("StyleBox_panel")
+
+[node name="Margin" type="MarginContainer" parent="Center/Panel"]
+layout_mode = 2
+theme_override_constants/margin_left = 28
+theme_override_constants/margin_top = 24
+theme_override_constants/margin_right = 28
+theme_override_constants/margin_bottom = 24
+
+[node name="Layout" type="VBoxContainer" parent="Center/Panel/Margin"]
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="Title" type="Label" parent="Center/Panel/Margin/Layout"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.95, 0.98, 1, 1)
+theme_override_font_sizes/font_size = 28
+text = "Battle Arena — Multiplayer Test"
+horizontal_alignment = 1
+
+[node name="Subtitle" type="Label" parent="Center/Panel/Margin/Layout"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.72, 0.82, 0.95, 1)
+text = "Host or join another instance over ENet. Steam is not required."
+horizontal_alignment = 1
+
+[node name="NameLabel" type="Label" parent="Center/Panel/Margin/Layout"]
+layout_mode = 2
+text = "Display name"
+
+[node name="DisplayName" type="LineEdit" parent="Center/Panel/Margin/Layout"]
+layout_mode = 2
+text = "Player"
+max_length = 32
+
+[node name="AddressLabel" type="Label" parent="Center/Panel/Margin/Layout"]
+layout_mode = 2
+text = "Host address"
+
+[node name="Address" type="LineEdit" parent="Center/Panel/Margin/Layout"]
+layout_mode = 2
+text = "127.0.0.1"
+
+[node name="PortLabel" type="Label" parent="Center/Panel/Margin/Layout"]
+layout_mode = 2
+text = "Port"
+
+[node name="Port" type="SpinBox" parent="Center/Panel/Margin/Layout"]
+layout_mode = 2
+min_value = 1.0
+max_value = 65535.0
+value = 7777.0
+rounded = true
+allow_greater = false
+allow_lesser = false
+
+[node name="Buttons" type="HBoxContainer" parent="Center/Panel/Margin/Layout"]
+layout_mode = 2
+theme_override_constants/separation = 10
+alignment = 1
+
+[node name="Offline" type="Button" parent="Center/Panel/Margin/Layout/Buttons"]
+layout_mode = 2
+text = "Offline Test"
+
+[node name="Host" type="Button" parent="Center/Panel/Margin/Layout/Buttons"]
+layout_mode = 2
+text = "Host Game"
+
+[node name="Join" type="Button" parent="Center/Panel/Margin/Layout/Buttons"]
+layout_mode = 2
+text = "Join Game"
+
+[node name="Status" type="Label" parent="Center/Panel/Margin/Layout"]
+custom_minimum_size = Vector2(0, 78)
+layout_mode = 2
+theme_override_colors/font_color = Color(0.7, 1, 0.76, 1)
+text = "Ready."
+horizontal_alignment = 1
+vertical_alignment = 1
+autowrap_mode = 2

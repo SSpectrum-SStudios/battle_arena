@@ -9,5 +9,10 @@
     <Compile Remove="tests\**\*.cs" />
     <Compile Remove=".godot\**\*.cs" />
     <ProjectReference Include="src\BattleArena.Core\BattleArena.Core.csproj" />
+    <ProjectReference Include="src\BattleArena.Multiplayer\BattleArena.Multiplayer.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- Godot's development output only copies runtime packages referenced by the root game project. -->
+    <PackageReference Include="Google.Protobuf" Version="3.35.1" />
   </ItemGroup>
 </Project>
