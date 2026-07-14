@@ -120,17 +120,16 @@ public partial class NetworkAvatar : CharacterBody3D
         Input.MouseMode = Input.MouseModeEnum.Visible;
     }
 
-    public override void _UnhandledInput(InputEvent inputEvent)
+    public override void _Input(InputEvent inputEvent)
     {
         if (!_locallyControlled)
         {
             return;
         }
 
-        if (inputEvent is InputEventKey keyEvent && keyEvent.Pressed && keyEvent.Keycode == Key.Escape)
+        if (inputEvent.IsActionPressed("ui_cancel"))
         {
-            _gameplayInputEnabled = false;
-            Input.MouseMode = Input.MouseModeEnum.Visible;
+            ReleaseGameplayControl();
             GetViewport().SetInputAsHandled();
             return;
         }
@@ -154,6 +153,13 @@ public partial class NetworkAvatar : CharacterBody3D
 
     public NetworkMovementInput CaptureInput(ulong sequence, ulong clientTick, float delta)
     {
+        // This fallback reads the global action state even if another node consumed
+        // the Escape event before normal gameplay input processing.
+        if (_gameplayInputEnabled && Input.IsActionJustPressed("ui_cancel"))
+        {
+            ReleaseGameplayControl();
+        }
+
         if (!_gameplayInputEnabled || !GetWindow().HasFocus())
         {
             return NetworkMovementInput.Neutral(clientTick, _yaw, _pitch) with { Sequence = sequence };
@@ -227,6 +233,12 @@ public partial class NetworkAvatar : CharacterBody3D
     {
         _yaw = Mathf.Wrap(_yaw + yawDelta, -Mathf.Pi, Mathf.Pi);
         SetPitch(_pitch + pitchDelta);
+    }
+
+    private void ReleaseGameplayControl()
+    {
+        _gameplayInputEnabled = false;
+        Input.MouseMode = Input.MouseModeEnum.Visible;
     }
 
     private void ApplyCameraMode()

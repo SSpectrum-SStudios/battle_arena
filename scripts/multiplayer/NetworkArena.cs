@@ -508,11 +508,11 @@ public partial class NetworkArena : Node3D
         _statusLabel.Text = _mode == ArenaMode.Authority
             ? $"HOST AUTHORITY  |  tick {_simulationTick}  |  speed {horizontalSpeed:0.0} m/s  |  snapshots 30 Hz  |  players {_avatars.Count}\n" +
               "MOVEMENT TEST ONLY — attacks and combat are not networked yet\n" +
-              "Escape releases the mouse; click the game to resume control"
+              "Escape releases the mouse; click the game to resume control (Alt+Tab is the fallback)"
             : _authorityAvailable
                 ? $"CLIENT PREDICTION  |  tick {_simulationTick}  |  speed {horizontalSpeed:0.0} m/s  |  unacked {_predictionHistory.Count}  |  last correction {_lastCorrectionDistance:0.000} m\n" +
                   "MOVEMENT TEST ONLY — attacks and combat are not networked yet\n" +
-                  "Escape releases the mouse; click the game to resume control"
+                  "Escape releases the mouse; click the game to resume control (Alt+Tab is the fallback)"
                 : "CONNECTION INTERRUPTED  |  waiting for authority reconnection";
     }
 
