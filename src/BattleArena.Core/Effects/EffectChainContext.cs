@@ -55,4 +55,15 @@ public sealed class EffectChainContext
         ConsumedOperations++;
         return TriggerBudgetConsumeStatus.Consumed;
     }
+
+    public TriggerBudgetConsumeStatus TryConsumeOperation()
+    {
+        if (ConsumedOperations >= MaximumOperations)
+        {
+            return TriggerBudgetConsumeStatus.GlobalChainBudgetExhausted;
+        }
+
+        ConsumedOperations++;
+        return TriggerBudgetConsumeStatus.Consumed;
+    }
 }

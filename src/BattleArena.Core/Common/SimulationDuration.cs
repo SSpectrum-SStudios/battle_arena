@@ -4,42 +4,22 @@ public readonly record struct SimulationDuration : IComparable<SimulationDuratio
 {
     public static readonly SimulationDuration Zero = new(0);
 
-    public SimulationDuration(long microseconds)
+    public SimulationDuration(long ticks)
     {
-        if (microseconds < 0)
+        if (ticks < 0)
         {
-            throw new ArgumentOutOfRangeException(nameof(microseconds), "A duration cannot be negative.");
+            throw new ArgumentOutOfRangeException(nameof(ticks), "A duration cannot be negative.");
         }
 
-        Microseconds = microseconds;
+        Ticks = ticks;
     }
 
-    public long Microseconds { get; }
+    public long Ticks { get; }
 
-    public static SimulationDuration FromSeconds(decimal seconds)
-    {
-        if (seconds < 0m)
-        {
-            throw new ArgumentOutOfRangeException(nameof(seconds), "A duration cannot be negative.");
-        }
-
-        var microseconds = decimal.Round(
-            seconds * 1_000_000m,
-            decimals: 0,
-            MidpointRounding.AwayFromZero);
-
-        if (microseconds > long.MaxValue)
-        {
-            throw new ArgumentOutOfRangeException(nameof(seconds), "The duration is too large.");
-        }
-
-        return new SimulationDuration((long)microseconds);
-    }
-
-    public int CompareTo(SimulationDuration other) => Microseconds.CompareTo(other.Microseconds);
+    public int CompareTo(SimulationDuration other) => Ticks.CompareTo(other.Ticks);
 
     public static SimulationDuration operator +(SimulationDuration left, SimulationDuration right) =>
-        new(checked(left.Microseconds + right.Microseconds));
+        new(checked(left.Ticks + right.Ticks));
 
-    public override string ToString() => $"{Microseconds}us";
+    public override string ToString() => $"{Ticks} ticks";
 }

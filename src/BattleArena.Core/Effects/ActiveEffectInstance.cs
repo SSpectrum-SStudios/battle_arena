@@ -2,9 +2,9 @@ using BattleArena.Core.Common;
 
 namespace BattleArena.Core.Effects;
 
-public sealed class ActiveEffectInstance
+public abstract class ActiveEffectInstance
 {
-    public ActiveEffectInstance(
+    protected ActiveEffectInstance(
         ActiveEffectId id,
         EffectDefinitionId definitionId,
         CombatantId sourceCombatantId,

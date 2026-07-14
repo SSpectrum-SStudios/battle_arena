@@ -4,22 +4,22 @@ public readonly record struct SimulationInstant : IComparable<SimulationInstant>
 {
     public static readonly SimulationInstant Zero = new(0);
 
-    public SimulationInstant(long microseconds)
+    public SimulationInstant(long tick)
     {
-        if (microseconds < 0)
+        if (tick < 0)
         {
-            throw new ArgumentOutOfRangeException(nameof(microseconds), "Simulation time cannot be negative.");
+            throw new ArgumentOutOfRangeException(nameof(tick), "Simulation time cannot be negative.");
         }
 
-        Microseconds = microseconds;
+        Tick = tick;
     }
 
-    public long Microseconds { get; }
+    public long Tick { get; }
 
-    public int CompareTo(SimulationInstant other) => Microseconds.CompareTo(other.Microseconds);
+    public int CompareTo(SimulationInstant other) => Tick.CompareTo(other.Tick);
 
     public static SimulationInstant operator +(SimulationInstant instant, SimulationDuration duration) =>
-        new(checked(instant.Microseconds + duration.Microseconds));
+        new(checked(instant.Tick + duration.Ticks));
 
     public static SimulationDuration operator -(SimulationInstant left, SimulationInstant right)
     {
@@ -28,20 +28,20 @@ public readonly record struct SimulationInstant : IComparable<SimulationInstant>
             throw new InvalidOperationException("A later instant is required to calculate elapsed time.");
         }
 
-        return new SimulationDuration(left.Microseconds - right.Microseconds);
+        return new SimulationDuration(left.Tick - right.Tick);
     }
 
     public static bool operator <(SimulationInstant left, SimulationInstant right) =>
-        left.Microseconds < right.Microseconds;
+        left.Tick < right.Tick;
 
     public static bool operator >(SimulationInstant left, SimulationInstant right) =>
-        left.Microseconds > right.Microseconds;
+        left.Tick > right.Tick;
 
     public static bool operator <=(SimulationInstant left, SimulationInstant right) =>
-        left.Microseconds <= right.Microseconds;
+        left.Tick <= right.Tick;
 
     public static bool operator >=(SimulationInstant left, SimulationInstant right) =>
-        left.Microseconds >= right.Microseconds;
+        left.Tick >= right.Tick;
 
-    public override string ToString() => $"{Microseconds}us";
+    public override string ToString() => $"tick {Tick}";
 }

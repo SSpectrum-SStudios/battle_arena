@@ -682,6 +682,34 @@ When the same source repeatedly applies a permanent or scoped modification to th
 
 This policy belongs to the item data and is validated with the target property's schema. There is no universal poison-radius stacking rule.
 
+Refresh or replace is the expected common default, but definitions may explicitly select stacking or capped stacking.
+
+### Modifier Ownership and Removal Policies
+
+Scoped removal is an engine-level lifecycle mechanism, not a poison-radius-specific rule. Every installed modifier contribution has a source ownership handle and an authored removal policy.
+
+Examples:
+
+- A radius installs a contribution when a target begins matching and removes that owned contribution when the target stops matching.
+- A timed buff removes its contributions when its source active effect expires.
+- An equipped passive removes its contributions when the source item is replaced.
+- A per-life modifier is removed when its life generation ends.
+- A permanent active-effect modification has no automatic removal condition before the target effect expires.
+
+The target object does not need to understand why removal occurred. It removes the contribution by its unique ownership/contribution ID and recompiles effective state from the remaining ordered contributions.
+
+### Damage-Portion Selection
+
+Periodic damage portions receive stable authored local identifiers in addition to their damage type. Modifier selectors support:
+
+- Every damage portion.
+- Every portion of one damage type, such as all Poison portions.
+- One specifically identified authored portion.
+
+Increasing Poison damage changes only selected Poison portions; it does not change Fire, Physical, or other portions in the same tick packet.
+
+Runtime modifier contributions apply in stable installation order, following the same first-to-last transformation rule as equipment contributions.
+
 ### Trigger Processing and Safety
 
 Effects may trigger other effects, creating chains. The authoritative resolver should use an explicit queue rather than recursive method calls.

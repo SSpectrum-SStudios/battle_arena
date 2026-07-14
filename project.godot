@@ -24,6 +24,10 @@ GlobalSignals="*res://scripts/utils/GlobalSignals.cs"
 
 project/assembly_name="Battle Arena"
 
+[physics]
+
+common/physics_ticks_per_second=60
+
 [input]
 
 ui_accept={

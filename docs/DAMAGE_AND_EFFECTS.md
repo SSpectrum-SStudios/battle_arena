@@ -146,11 +146,25 @@ Other items can modify these poison effects. A chest-armor item might increase p
 
 The system must specify how duration and interval changes affect an effect already attached to a player, including whether the next scheduled tick moves, how duration extensions are applied, and whether temporary modifications revert when their source stops affecting the poison.
 
-### Authoritative Time Representation
+### Confirmed Physics-Aligned Time Representation
 
-Effect timing uses integer simulation units rather than floating-point elapsed seconds. The initial unit is microseconds. Authored JSON may use readable seconds, which content validation converts to an exact or explicitly rounded integer duration before a match begins.
+Effect timing uses integer authoritative simulation ticks rather than floating-point elapsed seconds. The Godot adapter advances the clock once for every authoritative physics step. The project initially uses 60 physics ticks per second.
+
+Authored JSON may use readable seconds. Content compilation converts seconds into an integer tick count using the match's fixed simulation rate and an explicit rounding policy. The item creator displays both values when rounding occurs.
+
+At 60 ticks per second:
+
+```text
+0.5 seconds = 30 ticks
+1 second    = 60 ticks
+2 seconds   = 120 ticks
+```
+
+The minimum schedulable interval is one authoritative simulation tick. Values below one tick are rejected or explicitly clamped during content validation; runtime effects never schedule work between physics steps.
 
 The authoritative simulation clock advances only while the active arena simulation is running. Paused gameplay and between-round selection do not consume effect intervals, durations, cooldowns, or other simulation-time schedules.
+
+The simulation rate is fixed for a match and included in authoritative configuration/snapshots. It must not silently change after item timing has been compiled.
 
 ### First-Tick Policy
 

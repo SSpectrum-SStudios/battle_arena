@@ -1,5 +1,6 @@
 using BattleArena.Core.Common;
 using BattleArena.Core.Effects;
+using BattleArena.Core.Combat;
 
 namespace BattleArena.Core.Tests.Effects;
 
@@ -24,20 +25,23 @@ public sealed class EffectSchedulerTests
             due.Select(static effect => effect.Id.Value));
     }
 
-    private static ActiveEffectInstance Effect(long id, decimal intervalSeconds) =>
-        new(
-            new ActiveEffectId(id),
+    private static ActiveEffectInstance Effect(long id, decimal intervalSeconds)
+    {
+        var definition = new PeriodicDamageEffectDefinition(
             new EffectDefinitionId("base:test_effect"),
+            [new DamagePortion(DamageType.Physical, 1d)],
+            TestSimulation.Duration(intervalSeconds),
+            FirstTickPolicy.AfterInterval,
+            new PeriodicCompletionPolicy.AfterTickCount(1));
+
+        return new PeriodicDamageEffectFactory().Create(
+            new ActiveEffectId(id),
+            definition,
             new CombatantId(1),
             new CombatantId(2),
             new LifeGenerationId(1),
-            EffectLifetimeScope.PerLife,
-            new PeriodicEffectSchedule(
-                SimulationInstant.Zero,
-                SimulationDuration.FromSeconds(intervalSeconds),
-                FirstTickPolicy.AfterInterval,
-                new PeriodicCompletionPolicy.AfterTickCount(1)));
+            SimulationInstant.Zero);
+    }
 
-    private static SimulationInstant AtSeconds(decimal seconds) =>
-        new(SimulationDuration.FromSeconds(seconds).Microseconds);
+    private static SimulationInstant AtSeconds(decimal seconds) => TestSimulation.At(seconds);
 }

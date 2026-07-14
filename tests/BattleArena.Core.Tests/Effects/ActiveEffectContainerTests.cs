@@ -68,17 +68,22 @@ public sealed class ActiveEffectContainerTests
     private static ActiveEffectInstance Effect(
         long id,
         CombatantId target,
-        EffectLifetimeScope scope) =>
-        new(
-            new ActiveEffectId(id),
+        EffectLifetimeScope scope)
+    {
+        var definition = new PeriodicDamageEffectDefinition(
             new EffectDefinitionId("base:test_effect"),
+            [new DamagePortion(DamageType.Physical, 1d)],
+            TestSimulation.Duration(1m),
+            FirstTickPolicy.AfterInterval,
+            new PeriodicCompletionPolicy.AfterTickCount(1),
+            scope);
+
+        return new PeriodicDamageEffectFactory().Create(
+            new ActiveEffectId(id),
+            definition,
             new CombatantId(99),
             target,
             new LifeGenerationId(1),
-            scope,
-            new PeriodicEffectSchedule(
-                SimulationInstant.Zero,
-                SimulationDuration.FromSeconds(1m),
-                FirstTickPolicy.AfterInterval,
-                new PeriodicCompletionPolicy.AfterTickCount(1)));
+            SimulationInstant.Zero);
+    }
 }

@@ -18,11 +18,11 @@ public sealed class PeriodicEffectScheduleTests
         {
             var result = schedule.Advance(AtSeconds(second));
             Assert.True(result.ExecutedTick);
-            tickTimes.Add(result.TickScheduledAt!.Value.Microseconds);
+            tickTimes.Add(result.TickScheduledAt!.Value.Tick);
         }
 
         Assert.Equal(
-            new long[] { 2_000_000, 4_000_000, 6_000_000, 8_000_000, 10_000_000 },
+            new long[] { 120, 240, 360, 480, 600 },
             tickTimes);
         Assert.Equal(5, schedule.ExecutedTicks);
         Assert.True(schedule.IsExpired);
@@ -107,7 +107,7 @@ public sealed class PeriodicEffectScheduleTests
             FirstTickPolicy.AfterInterval);
         var currentTime = AtSeconds(1.5m);
 
-        schedule.ChangeInterval(SimulationDuration.FromSeconds(1m), currentTime);
+        schedule.ChangeInterval(TestSimulation.Duration(1m), currentTime);
         var result = schedule.Advance(currentTime);
 
         Assert.Equal(PeriodicScheduleStatus.Ticked, result.Status);
@@ -124,7 +124,7 @@ public sealed class PeriodicEffectScheduleTests
             FirstTickPolicy.AfterInterval);
 
         schedule.ChangeInterval(
-            SimulationDuration.FromSeconds(4m),
+            TestSimulation.Duration(4m),
             AtSeconds(1m));
 
         Assert.Equal(AtSeconds(4m), schedule.NextActionAt);
@@ -156,7 +156,7 @@ public sealed class PeriodicEffectScheduleTests
         FirstTickPolicy firstTickPolicy) =>
         new(
             SimulationInstant.Zero,
-            SimulationDuration.FromSeconds(intervalSeconds),
+            TestSimulation.Duration(intervalSeconds),
             firstTickPolicy,
             new PeriodicCompletionPolicy.AfterTickCount(ticks));
 
@@ -166,11 +166,10 @@ public sealed class PeriodicEffectScheduleTests
         FirstTickPolicy firstTickPolicy) =>
         new(
             SimulationInstant.Zero,
-            SimulationDuration.FromSeconds(intervalSeconds),
+            TestSimulation.Duration(intervalSeconds),
             firstTickPolicy,
             new PeriodicCompletionPolicy.AfterDuration(
-                SimulationDuration.FromSeconds(durationSeconds)));
+                TestSimulation.Duration(durationSeconds)));
 
-    private static SimulationInstant AtSeconds(decimal seconds) =>
-        new(SimulationDuration.FromSeconds(seconds).Microseconds);
+    private static SimulationInstant AtSeconds(decimal seconds) => TestSimulation.At(seconds);
 }
