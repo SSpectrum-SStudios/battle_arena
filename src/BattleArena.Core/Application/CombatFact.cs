@@ -37,6 +37,24 @@ public abstract record CombatFact(SimulationInstant OccurredAt)
         ActiveEffectRemovalReason Reason)
         : CombatFact(OccurredAt);
 
+    public sealed record ActiveEffectModified(
+        SimulationInstant OccurredAt,
+        PeriodicDamageEffectSnapshot Effect)
+        : CombatFact(OccurredAt);
+
+    public sealed record InfluenceStarted(
+        SimulationInstant OccurredAt,
+        ActiveEffectInfluenceId InfluenceId,
+        ActiveEffectInfluenceDefinitionId DefinitionId,
+        CombatantId SourceCombatantId,
+        LifeGenerationId SourceLifeGenerationId)
+        : CombatFact(OccurredAt);
+
+    public sealed record InfluenceEnded(
+        SimulationInstant OccurredAt,
+        ActiveEffectInfluenceId InfluenceId)
+        : CombatFact(OccurredAt);
+
     public sealed record CombatantEliminated(
         SimulationInstant OccurredAt,
         CombatantId CombatantId,

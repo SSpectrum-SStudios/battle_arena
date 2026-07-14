@@ -2,6 +2,7 @@ using BattleArena.Core.Actions;
 using BattleArena.Core.Combat;
 using BattleArena.Core.Common;
 using BattleArena.Core.Effects;
+using BattleArena.Core.Influences;
 using System.Collections.ObjectModel;
 
 namespace BattleArena.Core.Application;
@@ -9,34 +10,44 @@ namespace BattleArena.Core.Application;
 public sealed class CombatApplicationFacade
 {
     private readonly CombatActionCatalog _actionCatalog;
+    private readonly ActiveEffectInfluenceCatalog _influenceCatalog;
     private readonly CombatResolver _combatResolver;
     private readonly PeriodicDamageEffectFactory _periodicDamageFactory = new();
     private readonly PeriodicDamageEffectExecutor _periodicDamageExecutor;
     private readonly EffectScheduler _effectScheduler = new();
     private readonly Dictionary<CombatantId, CombatantState> _combatants = [];
     private readonly Dictionary<ActionExecutionId, ActionExecution> _actionExecutions = [];
+    private readonly Dictionary<ActiveEffectInfluenceId, ActiveEffectInfluenceInstance> _influences = [];
     private readonly Queue<CombatFact> _facts = [];
     private long _nextActionExecutionId = 1;
     private long _nextActiveEffectId = 1;
     private long _nextEffectChainId = 1;
+    private long _nextInfluenceId = 1;
+    private long _nextContributionId = 1;
+    private long _nextInstallationSequence = 1;
 
     public CombatApplicationFacade(
         CombatActionCatalog actionCatalog,
-        CombatResolver combatResolver)
+        CombatResolver combatResolver,
+        ActiveEffectInfluenceCatalog? influenceCatalog = null)
     {
         _actionCatalog = actionCatalog ?? throw new ArgumentNullException(nameof(actionCatalog));
         _combatResolver = combatResolver ?? throw new ArgumentNullException(nameof(combatResolver));
+        _influenceCatalog = influenceCatalog ?? new ActiveEffectInfluenceCatalog([]);
         _periodicDamageExecutor = new PeriodicDamageEffectExecutor(_combatResolver);
     }
 
     public SimulationInstant CurrentTime { get; private set; }
 
-    public void RegisterCombatant(Combatant combatant, ResistanceProfile resistanceProfile)
+    public void RegisterCombatant(
+        Combatant combatant,
+        ResistanceProfile resistanceProfile,
+        TeamId? teamId = null)
     {
         ArgumentNullException.ThrowIfNull(combatant);
         ArgumentNullException.ThrowIfNull(resistanceProfile);
 
-        if (!_combatants.TryAdd(combatant.Id, new CombatantState(combatant, resistanceProfile)))
+        if (!_combatants.TryAdd(combatant.Id, new CombatantState(combatant, resistanceProfile, teamId)))
         {
             throw new ArgumentException(
                 $"Combatant ID {combatant.Id} is already registered.",
@@ -80,6 +91,160 @@ public sealed class CombatApplicationFacade
                 source.Combatant.CurrentLifeGenerationId));
 
         return new BeginActionResult(BeginActionStatus.Started, executionId);
+    }
+
+    public BeginInfluenceResult BeginInfluence(
+        CombatantId sourceCombatantId,
+        ActiveEffectInfluenceDefinitionId definitionId)
+    {
+        if (!_influenceCatalog.TryGet(definitionId, out var definition))
+        {
+            return new BeginInfluenceResult(BeginInfluenceStatus.UnknownDefinition, null);
+        }
+
+        if (!_combatants.TryGetValue(sourceCombatantId, out var source))
+        {
+            return new BeginInfluenceResult(BeginInfluenceStatus.SourceNotFound, null);
+        }
+
+        if (source.Combatant.IsEliminated)
+        {
+            return new BeginInfluenceResult(BeginInfluenceStatus.SourceEliminated, null);
+        }
+
+        var influenceId = NextInfluenceId();
+        var influence = new ActiveEffectInfluenceInstance(
+            influenceId,
+            definition!,
+            sourceCombatantId,
+            source.Combatant.CurrentLifeGenerationId);
+        _influences.Add(influenceId, influence);
+        _facts.Enqueue(
+            new CombatFact.InfluenceStarted(
+                CurrentTime,
+                influenceId,
+                definitionId,
+                sourceCombatantId,
+                source.Combatant.CurrentLifeGenerationId));
+
+        return new BeginInfluenceResult(BeginInfluenceStatus.Started, influenceId);
+    }
+
+    public InfluenceMembershipResult EnterInfluence(
+        ActiveEffectInfluenceId influenceId,
+        CombatantId targetCombatantId)
+    {
+        if (!_influences.TryGetValue(influenceId, out var influence))
+        {
+            return MembershipResult(
+                InfluenceMembershipStatus.InfluenceNotFound,
+                influenceId,
+                targetCombatantId);
+        }
+
+        if (influence.IsEnded)
+        {
+            return MembershipResult(
+                InfluenceMembershipStatus.InfluenceEnded,
+                influenceId,
+                targetCombatantId);
+        }
+
+        if (influence.Definition.RequiresActiveSourceLife &&
+            !IsSourceLifeActive(influence.SourceCombatantId, influence.SourceLifeGenerationId))
+        {
+            EndInfluenceInternal(influence);
+            return MembershipResult(
+                InfluenceMembershipStatus.SourceLifeInactive,
+                influenceId,
+                targetCombatantId);
+        }
+
+        if (!_combatants.TryGetValue(targetCombatantId, out var target))
+        {
+            return MembershipResult(
+                InfluenceMembershipStatus.TargetNotFound,
+                influenceId,
+                targetCombatantId);
+        }
+
+        if (target.Combatant.IsEliminated)
+        {
+            return MembershipResult(
+                InfluenceMembershipStatus.TargetEliminated,
+                influenceId,
+                targetCombatantId);
+        }
+
+        if (!influence.Definition.TargetFilter.Includes(
+                GetRelationship(influence.SourceCombatantId, targetCombatantId)))
+        {
+            return MembershipResult(
+                InfluenceMembershipStatus.TargetRejected,
+                influenceId,
+                targetCombatantId);
+        }
+
+        if (!influence.AddMember(targetCombatantId))
+        {
+            return MembershipResult(
+                InfluenceMembershipStatus.AlreadyEntered,
+                influenceId,
+                targetCombatantId);
+        }
+
+        foreach (var effect in target.Combatant.ActiveEffects.Effects
+                     .OfType<PeriodicDamageEffectInstance>()
+                     .ToArray())
+        {
+            if (ApplyInfluenceToEffect(influence, effect))
+            {
+                ProcessEffectAfterModifierChange(target, effect);
+            }
+        }
+
+        return MembershipResult(
+            InfluenceMembershipStatus.Entered,
+            influenceId,
+            targetCombatantId);
+    }
+
+    public InfluenceMembershipResult ExitInfluence(
+        ActiveEffectInfluenceId influenceId,
+        CombatantId targetCombatantId)
+    {
+        if (!_influences.TryGetValue(influenceId, out var influence))
+        {
+            return MembershipResult(
+                InfluenceMembershipStatus.InfluenceNotFound,
+                influenceId,
+                targetCombatantId);
+        }
+
+        if (!influence.RemoveMember(targetCombatantId))
+        {
+            return MembershipResult(
+                InfluenceMembershipStatus.AlreadyExited,
+                influenceId,
+                targetCombatantId);
+        }
+
+        RemoveInfluenceFromTarget(influence, targetCombatantId);
+        return MembershipResult(
+            InfluenceMembershipStatus.Exited,
+            influenceId,
+            targetCombatantId);
+    }
+
+    public bool EndInfluence(ActiveEffectInfluenceId influenceId)
+    {
+        if (!_influences.TryGetValue(influenceId, out var influence))
+        {
+            return false;
+        }
+
+        EndInfluenceInternal(influence);
+        return true;
     }
 
     public bool UpdateResistanceProfile(
@@ -239,6 +404,14 @@ public sealed class CombatApplicationFacade
             .Select(static effect => effect.CreateSnapshot())
             .ToArray();
 
+    public IReadOnlyList<PeriodicDamageEffectSnapshot> GetPeriodicDamageEffectSnapshots() =>
+        _combatants.Values
+            .SelectMany(static state => state.Combatant.ActiveEffects.Effects)
+            .OfType<PeriodicDamageEffectInstance>()
+            .OrderBy(static effect => effect.Id.Value)
+            .Select(static effect => effect.CreatePeriodicSnapshot())
+            .ToArray();
+
     public IReadOnlyList<CombatFact> DrainFacts()
     {
         var facts = _facts.ToArray();
@@ -287,7 +460,10 @@ public sealed class CombatApplicationFacade
         target.Combatant.ActiveEffects.Add(effect);
         _facts.Enqueue(new CombatFact.ActiveEffectApplied(CurrentTime, effect.CreateSnapshot()));
 
-        if (effect.Schedule.NextActionAt == CurrentTime)
+        ApplyActiveInfluencesToEffect(effect);
+
+        if (target.Combatant.ActiveEffects.TryGet(effect.Id, out _) &&
+            effect.Schedule.NextActionAt == CurrentTime)
         {
             ExecutePeriodicDamage(effect, target);
         }
@@ -382,6 +558,16 @@ public sealed class CombatApplicationFacade
             execution.End();
         }
 
+        foreach (var influence in _influences.Values
+                     .Where(influence =>
+                         influence.Definition.RequiresActiveSourceLife &&
+                         influence.SourceCombatantId == target.Id &&
+                         influence.SourceLifeGenerationId == target.CurrentLifeGenerationId)
+                     .ToArray())
+        {
+            EndInfluenceInternal(influence);
+        }
+
         _facts.Enqueue(
             new CombatFact.CombatantEliminated(
                 CurrentTime,
@@ -430,13 +616,140 @@ public sealed class CombatApplicationFacade
     private EffectChainId NextEffectChainId() =>
         new(checked(_nextEffectChainId++));
 
+    private ActiveEffectInfluenceId NextInfluenceId() =>
+        new(checked(_nextInfluenceId++));
+
+    private ContributionId NextContributionId() =>
+        new(checked(_nextContributionId++));
+
+    private InstallationSequence NextInstallationSequence() =>
+        new(checked(_nextInstallationSequence++));
+
     private static RegisterHitResult HitResult(
         RegisterHitStatus status,
         ActionExecutionId executionId,
         CombatantId targetCombatantId) =>
         new(status, executionId, targetCombatantId);
 
+    private void ApplyActiveInfluencesToEffect(PeriodicDamageEffectInstance effect)
+    {
+        var target = _combatants[effect.TargetCombatantId];
+        var changed = false;
+        foreach (var influence in _influences.Values
+                     .Where(influence =>
+                         !influence.IsEnded &&
+                         influence.Members.Contains(effect.TargetCombatantId))
+                     .OrderBy(static influence => influence.Id.Value))
+        {
+            changed |= ApplyInfluenceToEffect(influence, effect);
+        }
+
+        if (changed)
+        {
+            ProcessEffectAfterModifierChange(target, effect);
+        }
+    }
+
+    private bool ApplyInfluenceToEffect(
+        ActiveEffectInfluenceInstance influence,
+        PeriodicDamageEffectInstance effect)
+    {
+        if (!influence.Definition.EffectTags.IsSatisfiedBy(effect.Definition.Tags) ||
+            !influence.Definition.EffectSourceFilter.Includes(
+                GetRelationship(influence.SourceCombatantId, effect.SourceCombatantId)))
+        {
+            return false;
+        }
+
+        var ownerId = new ModifierOwnerId(influence.Id.Value);
+        var contributions = influence.Definition.Modifiers
+            .Select(modifier => modifier.CreateContribution(
+                NextContributionId(),
+                ownerId,
+                NextInstallationSequence()))
+            .ToArray();
+        effect.InstallModifiers(contributions, CurrentTime);
+        _facts.Enqueue(new CombatFact.ActiveEffectModified(CurrentTime, effect.CreatePeriodicSnapshot()));
+        return true;
+    }
+
+    private void RemoveInfluenceFromTarget(
+        ActiveEffectInfluenceInstance influence,
+        CombatantId targetCombatantId)
+    {
+        if (!_combatants.TryGetValue(targetCombatantId, out var target))
+        {
+            return;
+        }
+
+        foreach (var effect in target.Combatant.ActiveEffects.Effects
+                     .OfType<PeriodicDamageEffectInstance>()
+                     .ToArray())
+        {
+            if (effect.RemoveModifiersOwnedBy(new ModifierOwnerId(influence.Id.Value), CurrentTime) > 0)
+            {
+                _facts.Enqueue(new CombatFact.ActiveEffectModified(CurrentTime, effect.CreatePeriodicSnapshot()));
+                ProcessEffectAfterModifierChange(target, effect);
+            }
+        }
+    }
+
+    private void EndInfluenceInternal(ActiveEffectInfluenceInstance influence)
+    {
+        foreach (var member in influence.Members.ToArray())
+        {
+            RemoveInfluenceFromTarget(influence, member);
+        }
+
+        influence.End();
+        _influences.Remove(influence.Id);
+        _facts.Enqueue(new CombatFact.InfluenceEnded(CurrentTime, influence.Id));
+    }
+
+    private void ProcessEffectAfterModifierChange(
+        CombatantState target,
+        PeriodicDamageEffectInstance effect)
+    {
+        if (effect.Schedule.IsExpired)
+        {
+            if (target.Combatant.ActiveEffects.Remove(effect.Id))
+            {
+                PublishEffectRemoved(target.Combatant.Id, effect.Id, ActiveEffectRemovalReason.Expired);
+            }
+
+            return;
+        }
+
+        if (effect.Schedule.NextActionAt is { } dueAt && dueAt <= CurrentTime)
+        {
+            ExecutePeriodicDamage(effect, target);
+        }
+    }
+
+    private CombatantRelationship GetRelationship(
+        CombatantId originCombatantId,
+        CombatantId candidateCombatantId)
+    {
+        if (originCombatantId == candidateCombatantId)
+        {
+            return CombatantRelationship.Self;
+        }
+
+        var originTeam = _combatants.GetValueOrDefault(originCombatantId)?.TeamId;
+        var candidateTeam = _combatants.GetValueOrDefault(candidateCombatantId)?.TeamId;
+        return originTeam is not null && originTeam == candidateTeam
+            ? CombatantRelationship.Ally
+            : CombatantRelationship.Enemy;
+    }
+
+    private static InfluenceMembershipResult MembershipResult(
+        InfluenceMembershipStatus status,
+        ActiveEffectInfluenceId influenceId,
+        CombatantId targetCombatantId) =>
+        new(status, influenceId, targetCombatantId);
+
     private sealed record CombatantState(
         Combatant Combatant,
-        ResistanceProfile ResistanceProfile);
+        ResistanceProfile ResistanceProfile,
+        TeamId? TeamId);
 }

@@ -293,6 +293,13 @@ Spatial discovery belongs at the Godot/application boundary because the pure dom
 
 Target filters must be data-driven. An area modifier may affect the owner's effects, allied effects, enemy effects, or every matching effect regardless of source, depending on the item definition.
 
+Spatial active-effect influences use two independent authored relationship filters:
+
+- The affected-combatant filter supports `Self`, `Allies`, `Enemies`, and `Everyone`.
+- The source-of-effect filter supports the equivalent meanings presented to authors as `OwnerOnly`, `Allies`, `Enemies`, and `AllSources`.
+
+In free-for-all matches, every other combatant is an enemy. Registered team IDs allow the same filters to resolve allies later without changing influence definitions.
+
 Modification lifetime is also authored:
 
 - A scoped modification exists only while its matching condition remains true, such as while a poison stays inside a radius. Removing the influence removes the modifier and restores the values calculated without it.
@@ -708,6 +715,10 @@ Examples:
 - A permanent active-effect modification has no automatic removal condition before the target effect expires.
 
 The target object does not need to understand why removal occurred. It removes the contribution by its unique ownership/contribution ID and recompiles effective state from the remaining ordered contributions.
+
+An active spatial influence retains authoritative combatant membership reported by the Godot adapter. Entering installs owned contributions on all currently matching effects. New matching effects applied while membership remains active receive the same influence immediately. Exiting, toggling the influence off, or ending its source life removes the influence-owned contributions and recompiles each surviving effect.
+
+Godot owns geometry and overlap detection; Core owns relationship validation, effect-tag matching, source filtering, contribution creation, ordering, and cleanup. This lets tests drive enter/exit commands without requiring the physics engine while keeping gameplay decisions authoritative.
 
 ### Damage-Portion Selection
 

@@ -36,20 +36,53 @@ public sealed class PeriodicDamageEffectInstance : ActiveEffectInstance
 
     public void InstallModifier(
         PeriodicDamageModifierContribution contribution,
+        SimulationInstant currentTime) =>
+        InstallModifiers([contribution], currentTime);
+
+    public void InstallModifiers(
+        IEnumerable<PeriodicDamageModifierContribution> contributions,
         SimulationInstant currentTime)
     {
-        ArgumentNullException.ThrowIfNull(contribution);
+        ArgumentNullException.ThrowIfNull(contributions);
+        var materialized = contributions.ToArray();
+        if (materialized.Length == 0)
+        {
+            return;
+        }
+
+        if (materialized.Any(static contribution => contribution is null))
+        {
+            throw new ArgumentException("Modifier contributions cannot contain null.", nameof(contributions));
+        }
 
         if (Schedule.IsExpired)
         {
             throw new InvalidOperationException("An expired effect cannot be modified.");
         }
 
-        if (!_modifiers.TryAdd(contribution.Id, contribution))
+        var duplicateIncoming = materialized
+            .GroupBy(static contribution => contribution.Id)
+            .FirstOrDefault(static group => group.Count() > 1);
+        if (duplicateIncoming is not null)
         {
             throw new ArgumentException(
-                $"Modifier contribution ID {contribution.Id} is already installed.",
-                nameof(contribution));
+                $"Modifier contribution ID {duplicateIncoming.Key} appears more than once.",
+                nameof(contributions));
+        }
+
+        var existingId = materialized
+            .Select(static contribution => contribution.Id)
+            .FirstOrDefault(_modifiers.ContainsKey);
+        if (existingId != default)
+        {
+            throw new ArgumentException(
+                $"Modifier contribution ID {existingId} is already installed.",
+                nameof(contributions));
+        }
+
+        foreach (var contribution in materialized)
+        {
+            _modifiers.Add(contribution.Id, contribution);
         }
 
         try
@@ -58,7 +91,11 @@ public sealed class PeriodicDamageEffectInstance : ActiveEffectInstance
         }
         catch
         {
-            _modifiers.Remove(contribution.Id);
+            foreach (var contribution in materialized)
+            {
+                _modifiers.Remove(contribution.Id);
+            }
+
             throw;
         }
     }
@@ -89,6 +126,16 @@ public sealed class PeriodicDamageEffectInstance : ActiveEffectInstance
 
         return removedIds.Length;
     }
+
+    public PeriodicDamageEffectSnapshot CreatePeriodicSnapshot() =>
+        new(
+            CreateSnapshot(),
+            Definition.Tags,
+            EffectiveValues.TickDamagePortions,
+            EffectiveValues.Interval,
+            EffectiveValues.CompletionPolicy,
+            EffectiveValues.Revision,
+            _modifiers.Count);
 
     private void Recompile(SimulationInstant currentTime)
     {

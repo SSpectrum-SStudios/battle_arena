@@ -144,6 +144,8 @@ Timing and damage are defined by the originating item. A hypothetical Greater Po
 
 Other items can modify these poison effects. A chest-armor item might increase poison tick damage, extend poison duration, shorten the interval between ticks, or alter several of those properties. These modifications should apply through defined matching rules such as effect tags rather than requiring the armor to know about every individual poison weapon.
 
+A spatial poison influence independently filters which combatants are affected and whose poison effects qualify. Authored relationship options support self, allies, enemies, or everyone for affected combatants, and owner-only, allied, enemy, or all sources for the poison's origin. Existing qualifying poison instances update on entry; new qualifying instances update while membership remains active; exit or toggle-off removes only that influence's contributions.
+
 Effect tags, damage types, stable damage-portion IDs, first-tick policy, and completion-policy type are immutable structural properties. Runtime modifiers change exposed numeric values without changing the effect's nature.
 
 Interval changes interrupt the current schedule immediately. The next due time is recalculated from the last tick, or from application time before the first tick. If that recalculated time has already passed, one tick becomes immediately due without creating multiple retroactive ticks.
