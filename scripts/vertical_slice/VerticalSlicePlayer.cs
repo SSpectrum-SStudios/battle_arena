@@ -43,6 +43,7 @@ public partial class VerticalSlicePlayer : CharacterBody3D
     private PoisonAuraAdapter _poisonAura = null!;
     private float _pitch;
     private bool _firstPerson;
+    private bool _suppressAttackUntilReleased;
 
     public override void _Ready()
     {
@@ -73,6 +74,7 @@ public partial class VerticalSlicePlayer : CharacterBody3D
             Input.MouseMode != Input.MouseModeEnum.Captured)
         {
             Input.MouseMode = Input.MouseModeEnum.Captured;
+            _suppressAttackUntilReleased = true;
             GetViewport().SetInputAsHandled();
             return;
         }
@@ -104,8 +106,15 @@ public partial class VerticalSlicePlayer : CharacterBody3D
             ApplyCameraMode();
         }
 
-        if (Input.IsActionJustPressed(VerticalSliceInput.Attack) &&
-            Input.MouseMode == Input.MouseModeEnum.Captured)
+        if (_suppressAttackUntilReleased)
+        {
+            if (!Input.IsActionPressed(VerticalSliceInput.Attack))
+            {
+                _suppressAttackUntilReleased = false;
+            }
+        }
+        else if (Input.IsActionJustPressed(VerticalSliceInput.Attack) &&
+                 Input.MouseMode == Input.MouseModeEnum.Captured)
         {
             _swordAttack.TryStartAttack();
         }

@@ -25,7 +25,7 @@ Gameplay code reads semantic Godot input actions rather than physical keys, mous
 
 The vertical-slice poison aura is temporarily assigned to item activation 1. The other item actions are defined now so item scripts never need dedicated physical-key logic.
 
-`Escape` releases the mouse during the desktop test. Clicking inside the game recaptures it, and that recapture click is consumed instead of activating an attack. This is a local window-management convenience rather than an item or combat action.
+`Escape` releases the mouse during the desktop test. Clicking inside the game recaptures it. The attack action remains suppressed until that recapture click is physically released, preventing Godot's already-updated global action state from starting an attack. This is a local window-management convenience rather than an item or combat action.
 
 ## Remapping Boundary
 
