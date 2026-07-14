@@ -1,0 +1,39 @@
+syntax = "proto3";
+
+package battle_arena.protocol.v1;
+option csharp_namespace = "BattleArena.Protocol.V1";
+
+message Vector3Value {
+  float x = 1;
+  float y = 2;
+  float z = 3;
+}
+
+message ReplicatedStateRevision {
+  uint64 match_revision = 1;
+  uint64 entity_revision = 2;
+  uint64 effect_revision = 3;
+  uint64 world_object_revision = 4;
+}
+
+enum ClientActionKind {
+  CLIENT_ACTION_KIND_UNSPECIFIED = 0;
+  CLIENT_ACTION_KIND_ATTACK = 1;
+  CLIENT_ACTION_KIND_ACTIVATE_ITEM = 2;
+}
+
+enum ReplicatedLifeState {
+  REPLICATED_LIFE_STATE_UNSPECIFIED = 0;
+  REPLICATED_LIFE_STATE_ALIVE = 1;
+  REPLICATED_LIFE_STATE_ELIMINATED = 2;
+  REPLICATED_LIFE_STATE_RESPAWNING = 3;
+  REPLICATED_LIFE_STATE_OUT_OF_LIVES = 4;
+  REPLICATED_LIFE_STATE_DISCONNECTED = 5;
+}
+
+enum EffectLifecycleKind {
+  EFFECT_LIFECYCLE_KIND_UNSPECIFIED = 0;
+  EFFECT_LIFECYCLE_KIND_ADDED = 1;
+  EFFECT_LIFECYCLE_KIND_UPDATED = 2;
+  EFFECT_LIFECYCLE_KIND_REMOVED = 3;
+}

@@ -1,0 +1,27 @@
+syntax = "proto3";
+
+package battle_arena.protocol.v1;
+option csharp_namespace = "BattleArena.Protocol.V1";
+
+import "client_commands.proto";
+import "authority_state.proto";
+import "connection.proto";
+
+message PacketEnvelope {
+  uint32 protocol_version = 1;
+  fixed64 session_id = 2;
+  uint64 sequence = 3;
+  uint64 simulation_tick = 4;
+
+  oneof payload {
+    ClientInputBatch client_input_batch = 10;
+    ClientActionRequest client_action_request = 11;
+    AuthoritySnapshot authority_snapshot = 20;
+    AuthorityEventBatch authority_event_batch = 21;
+    AuthorityCheckpoint authority_checkpoint = 22;
+    JoinRequest join_request = 30;
+    JoinAccepted join_accepted = 31;
+    ReconnectRequest reconnect_request = 32;
+    StateBaseline state_baseline = 33;
+  }
+}

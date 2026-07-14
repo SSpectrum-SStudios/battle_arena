@@ -1,0 +1,27 @@
+syntax = "proto3";
+
+package battle_arena.protocol.v1;
+option csharp_namespace = "BattleArena.Protocol.V1";
+
+import "common.proto";
+
+message ClientInputFrame {
+  uint64 input_sequence = 1;
+  uint64 client_tick = 2;
+  float move_x = 3;
+  float move_z = 4;
+  float view_yaw_radians = 5;
+  float view_pitch_radians = 6;
+  uint32 button_bits = 7;
+}
+
+message ClientInputBatch {
+  repeated ClientInputFrame frames = 1;
+}
+
+message ClientActionRequest {
+  uint64 action_sequence = 1;
+  uint64 client_tick = 2;
+  ClientActionKind kind = 3;
+  uint32 equipment_slot = 4;
+}

@@ -1,0 +1,100 @@
+syntax = "proto3";
+
+package battle_arena.protocol.v1;
+option csharp_namespace = "BattleArena.Protocol.V1";
+
+import "common.proto";
+
+message CombatantSnapshot {
+  fixed64 combatant_id = 1;
+  fixed64 life_id = 2;
+  fixed64 controlling_player_id = 3;
+  Vector3Value position = 4;
+  Vector3Value velocity = 5;
+  float view_yaw_radians = 6;
+  float view_pitch_radians = 7;
+  int64 current_health = 8;
+  int64 maximum_health = 9;
+  int32 remaining_lives = 10;
+  ReplicatedLifeState life_state = 11;
+  uint64 last_processed_input_sequence = 12;
+}
+
+message ActiveEffectSnapshot {
+  fixed64 effect_instance_id = 1;
+  string effect_definition_id = 2;
+  fixed64 source_combatant_id = 3;
+  fixed64 source_life_id = 4;
+  fixed64 target_combatant_id = 5;
+  uint64 started_tick = 6;
+  optional uint64 expires_tick = 7;
+  uint32 stack_count = 8;
+}
+
+message WorldObjectSnapshot {
+  fixed64 world_object_id = 1;
+  string definition_id = 2;
+  fixed64 owner_combatant_id = 3;
+  fixed64 owner_life_id = 4;
+  Vector3Value position = 5;
+  float yaw_radians = 6;
+  uint32 remaining_activations = 7;
+}
+
+message AuthoritySnapshot {
+  repeated CombatantSnapshot combatants = 1;
+  ReplicatedStateRevision revision = 2;
+}
+
+message SpawnEvent {
+  CombatantSnapshot combatant = 1;
+}
+
+message DespawnEvent {
+  fixed64 combatant_id = 1;
+}
+
+message DamageEvent {
+  fixed64 source_combatant_id = 1;
+  fixed64 source_life_id = 2;
+  fixed64 target_combatant_id = 3;
+  int64 net_damage = 4;
+  int64 overkill = 5;
+}
+
+message EffectLifecycleEvent {
+  EffectLifecycleKind kind = 1;
+  ActiveEffectSnapshot effect = 2;
+  fixed64 effect_instance_id = 3;
+}
+
+message LifeStateEvent {
+  fixed64 combatant_id = 1;
+  fixed64 life_id = 2;
+  ReplicatedLifeState state = 3;
+  int32 remaining_lives = 4;
+}
+
+message AuthorityEvent {
+  uint64 event_sequence = 1;
+  uint64 authority_tick = 2;
+
+  oneof event {
+    SpawnEvent spawn = 10;
+    DespawnEvent despawn = 11;
+    DamageEvent damage = 12;
+    EffectLifecycleEvent effect_lifecycle = 13;
+    LifeStateEvent life_state = 14;
+  }
+}
+
+message AuthorityEventBatch {
+  repeated AuthorityEvent events = 1;
+}
+
+message AuthorityCheckpoint {
+  ReplicatedStateRevision revision = 1;
+  repeated CombatantSnapshot combatants = 2;
+  repeated ActiveEffectSnapshot active_effects = 3;
+  repeated WorldObjectSnapshot world_objects = 4;
+}

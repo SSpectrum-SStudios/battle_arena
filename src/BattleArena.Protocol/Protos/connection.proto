@@ -1,0 +1,36 @@
+syntax = "proto3";
+
+package battle_arena.protocol.v1;
+option csharp_namespace = "BattleArena.Protocol.V1";
+
+import "authority_state.proto";
+
+message JoinRequest {
+  uint32 client_protocol_version = 1;
+  string display_name = 2;
+  bytes client_nonce = 3;
+}
+
+message JoinAccepted {
+  fixed64 session_id = 1;
+  fixed64 player_id = 2;
+  fixed64 combatant_id = 3;
+  bytes reconnect_token = 4;
+  uint32 simulation_ticks_per_second = 5;
+  uint32 snapshot_rate = 6;
+  uint32 checkpoint_interval_ticks = 7;
+}
+
+message ReconnectRequest {
+  fixed64 session_id = 1;
+  fixed64 player_id = 2;
+  bytes reconnect_token = 3;
+  uint64 last_checkpoint_sequence = 4;
+  uint64 last_event_sequence = 5;
+}
+
+message StateBaseline {
+  fixed64 player_id = 1;
+  fixed64 controlled_combatant_id = 2;
+  AuthorityCheckpoint checkpoint = 3;
+}
