@@ -431,6 +431,8 @@ public partial class NetworkArena : Node3D
     private void ReconcileLocalPrediction(CombatantSnapshot authoritative)
     {
         var predictedPosition = _localAvatar.Position;
+        var localYaw = _localAvatar.Yaw;
+        var localPitch = _localAvatar.Pitch;
         _predictionHistory.RemoveAll(input => input.Sequence <= authoritative.LastProcessedInputSequence);
         _localAvatar.ApplyReplicatedTransform(
             ToGodot(authoritative.Position),
@@ -442,6 +444,10 @@ public partial class NetworkArena : Node3D
         {
             _movementMotor.Simulate(_localAvatar, input, FixedDelta);
         }
+
+        // The client owns its camera orientation. Authority snapshots correct
+        // motion, but must not rewind locally sampled look input.
+        _localAvatar.ApplyView(localYaw, localPitch);
 
         _lastCorrectionDistance = predictedPosition.DistanceTo(_localAvatar.Position);
         _localAvatar.SetDiagnosticText($"correction {_lastCorrectionDistance:0.000} m");

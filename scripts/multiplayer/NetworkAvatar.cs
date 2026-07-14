@@ -210,6 +210,13 @@ public partial class NetworkAvatar : CharacterBody3D
         SetPitch(pitch);
     }
 
+    public void ApplyView(float yaw, float pitch)
+    {
+        _yaw = Mathf.Wrap(yaw, -Mathf.Pi, Mathf.Pi);
+        Rotation = new Vector3(0, _yaw, 0);
+        SetPitch(pitch);
+    }
+
     public void SetPitch(float pitch)
     {
         _pitch = Mathf.Clamp(pitch, Mathf.DegToRad(-75f), Mathf.DegToRad(70f));
