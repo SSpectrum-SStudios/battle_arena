@@ -29,7 +29,10 @@ public sealed class EffectSchedulerTests
     {
         var definition = new PeriodicDamageEffectDefinition(
             new EffectDefinitionId("base:test_effect"),
-            [new DamagePortion(DamageType.Physical, 1d)],
+            [new PeriodicDamagePortionDefinition(
+                new DamagePortionId("primary_physical"),
+                DamageType.Physical,
+                1d)],
             TestSimulation.Duration(intervalSeconds),
             FirstTickPolicy.AfterInterval,
             new PeriodicCompletionPolicy.AfterTickCount(1));

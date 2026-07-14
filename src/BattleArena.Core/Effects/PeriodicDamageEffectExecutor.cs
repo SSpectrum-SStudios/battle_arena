@@ -60,7 +60,7 @@ public sealed class PeriodicDamageEffectExecutor
 
         var packet = new DamagePacket(
             effect.SourceCombatantId,
-            effect.Definition.TickDamagePortions);
+            effect.EffectiveValues.TickDamagePortions.Select(static portion => portion.ToDamagePortion()));
         var combatResolution = _combatResolver.Resolve(packet, currentResistance);
         var healthApplication = target.Apply(combatResolution);
 

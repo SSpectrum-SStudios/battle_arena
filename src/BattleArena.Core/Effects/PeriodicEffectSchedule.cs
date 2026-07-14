@@ -5,7 +5,7 @@ namespace BattleArena.Core.Effects;
 public sealed class PeriodicEffectSchedule
 {
     private SimulationInstant _nextTickAt;
-    private readonly SimulationInstant? _expiresAt;
+    private SimulationInstant? _expiresAt;
     private int? _remainingTicks;
 
     public PeriodicEffectSchedule(
@@ -32,6 +32,7 @@ public sealed class PeriodicEffectSchedule
         Interval = interval;
         FirstTickPolicy = firstTickPolicy;
         CompletionPolicy = completionPolicy;
+        EffectiveCompletionPolicy = completionPolicy;
         _nextTickAt = firstTickPolicy == FirstTickPolicy.Immediate
             ? appliedAt
             : appliedAt + interval;
@@ -59,6 +60,8 @@ public sealed class PeriodicEffectSchedule
     public FirstTickPolicy FirstTickPolicy { get; }
 
     public PeriodicCompletionPolicy CompletionPolicy { get; }
+
+    public PeriodicCompletionPolicy EffectiveCompletionPolicy { get; private set; }
 
     public SimulationInstant? LastTickAt { get; private set; }
 
@@ -135,6 +138,17 @@ public sealed class PeriodicEffectSchedule
 
     public void ChangeInterval(
         SimulationDuration newInterval,
+        SimulationInstant currentTime) =>
+        Reconfigure(newInterval, EffectiveCompletionPolicy, currentTime);
+
+    public void ChangeCompletionValue(
+        PeriodicCompletionPolicy newCompletionPolicy,
+        SimulationInstant currentTime) =>
+        Reconfigure(Interval, newCompletionPolicy, currentTime);
+
+    public void Reconfigure(
+        SimulationDuration newInterval,
+        PeriodicCompletionPolicy newCompletionPolicy,
         SimulationInstant currentTime)
     {
         if (newInterval == SimulationDuration.Zero)
@@ -147,10 +161,45 @@ public sealed class PeriodicEffectSchedule
             throw new InvalidOperationException("An expired schedule cannot be modified.");
         }
 
+        ArgumentNullException.ThrowIfNull(newCompletionPolicy);
+        if (newCompletionPolicy.GetType() != CompletionPolicy.GetType())
+        {
+            throw new ArgumentException(
+                "A schedule's completion-policy type is structural and cannot be changed.",
+                nameof(newCompletionPolicy));
+        }
+
         Interval = newInterval;
         var anchor = LastTickAt ?? AppliedAt;
         var recalculatedDueAt = anchor + newInterval;
         _nextTickAt = recalculatedDueAt <= currentTime ? currentTime : recalculatedDueAt;
+
+        switch (newCompletionPolicy)
+        {
+            case PeriodicCompletionPolicy.AfterTickCount tickCount:
+                _remainingTicks = Math.Max(0, tickCount.TotalTicks - ExecutedTicks);
+                if (_remainingTicks == 0)
+                {
+                    IsExpired = true;
+                }
+
+                break;
+            case PeriodicCompletionPolicy.AfterDuration duration:
+                _expiresAt = AppliedAt + duration.Duration;
+                if (_expiresAt < currentTime)
+                {
+                    IsExpired = true;
+                }
+
+                break;
+            default:
+                throw new ArgumentOutOfRangeException(
+                    nameof(newCompletionPolicy),
+                    newCompletionPolicy,
+                    "The completion policy is not supported.");
+        }
+
+        EffectiveCompletionPolicy = newCompletionPolicy;
         Revision++;
     }
 

@@ -596,6 +596,15 @@ Removing or replacing an earlier item requires recalculating the complete ordere
 
 ### Dynamic Active-Effect Properties
 
+Definitions establish the structural nature of an effect. Runtime modifiers may change values exposed by that structure, but they do not transform the effect into a different kind of thing. In particular:
+
+- A damage portion keeps its stable local ID and damage type while its amount changes.
+- An effect keeps its tags while matching modifiers use those tags to select it.
+- A periodic schedule keeps its authored completion-policy type while the policy's numeric value changes.
+- Changing structural behavior requires an explicitly authored replacement or additional effect.
+
+This "modify values, not nature" rule is the default across the game. Any future exception must be represented as an explicit authored transformation rather than an incidental numeric modifier.
+
 An active effect separates base state from effective state:
 
 ```text
@@ -626,9 +635,11 @@ Each effect kind declares exactly which properties it exposes for modification, 
 
 Examples:
 
-- Poison may expose tick damage, damage types, interval, remaining duration, and radius-related matching tags.
+- Poison may expose tick-damage amounts, interval, and the numeric value of its authored completion policy.
 - A mine may expose trigger radius, damage, arm time, active limit, and lifetime.
 - An immediate heal has no remaining duration or tick interval to modify.
+
+Damage types, effect tags, stable portion IDs, first-tick policy, and completion-policy type are structural properties and are not exposed as runtime numeric modifications.
 
 There is no artificial universal property set that every active effect must pretend to support. Shared property descriptors may be reused by several kinds, but compatibility is validated against the concrete effect schema when content loads.
 
@@ -707,6 +718,8 @@ Periodic damage portions receive stable authored local identifiers in addition t
 - One specifically identified authored portion.
 
 Increasing Poison damage changes only selected Poison portions; it does not change Fire, Physical, or other portions in the same tick packet.
+
+Damage-portion IDs and damage types are immutable structural data. A modifier changes a selected portion's amount, not its identity or type.
 
 Runtime modifier contributions apply in stable installation order, following the same first-to-last transformation rule as equipment contributions.
 

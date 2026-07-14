@@ -1,4 +1,3 @@
-using BattleArena.Core.Combat;
 using BattleArena.Core.Common;
 using System.Collections.ObjectModel;
 
@@ -6,12 +5,12 @@ namespace BattleArena.Core.Effects;
 
 public sealed class PeriodicDamageEffectDefinition
 {
-    private readonly ReadOnlyCollection<DamagePortion> _tickDamagePortions;
+    private readonly ReadOnlyCollection<PeriodicDamagePortionDefinition> _tickDamagePortions;
     private readonly ReadOnlyCollection<EffectTag> _tags;
 
     public PeriodicDamageEffectDefinition(
         EffectDefinitionId id,
-        IEnumerable<DamagePortion> tickDamagePortions,
+        IEnumerable<PeriodicDamagePortionDefinition> tickDamagePortions,
         SimulationDuration interval,
         FirstTickPolicy firstTickPolicy,
         PeriodicCompletionPolicy completionPolicy,
@@ -26,6 +25,16 @@ public sealed class PeriodicDamageEffectDefinition
         {
             throw new ArgumentException(
                 "Periodic damage must contain at least one non-null damage portion.",
+                nameof(tickDamagePortions));
+        }
+
+        var duplicatePortionId = portions
+            .GroupBy(static portion => portion.Id)
+            .FirstOrDefault(static group => group.Count() > 1);
+        if (duplicatePortionId is not null)
+        {
+            throw new ArgumentException(
+                $"Damage-portion ID {duplicatePortionId.Key} appears more than once.",
                 nameof(tickDamagePortions));
         }
 
@@ -57,7 +66,7 @@ public sealed class PeriodicDamageEffectDefinition
 
     public EffectDefinitionId Id { get; }
 
-    public IReadOnlyList<DamagePortion> TickDamagePortions => _tickDamagePortions;
+    public IReadOnlyList<PeriodicDamagePortionDefinition> TickDamagePortions => _tickDamagePortions;
 
     public SimulationDuration Interval { get; }
 

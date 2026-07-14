@@ -144,7 +144,13 @@ Timing and damage are defined by the originating item. A hypothetical Greater Po
 
 Other items can modify these poison effects. A chest-armor item might increase poison tick damage, extend poison duration, shorten the interval between ticks, or alter several of those properties. These modifications should apply through defined matching rules such as effect tags rather than requiring the armor to know about every individual poison weapon.
 
-The system must specify how duration and interval changes affect an effect already attached to a player, including whether the next scheduled tick moves, how duration extensions are applied, and whether temporary modifications revert when their source stops affecting the poison.
+Effect tags, damage types, stable damage-portion IDs, first-tick policy, and completion-policy type are immutable structural properties. Runtime modifiers change exposed numeric values without changing the effect's nature.
+
+Interval changes interrupt the current schedule immediately. The next due time is recalculated from the last tick, or from application time before the first tick. If that recalculated time has already passed, one tick becomes immediately due without creating multiple retroactive ticks.
+
+Completion-value changes preserve progress. For tick-count completion, executed ticks remain executed and the modified total determines the new remainder. If two of five ticks have executed, adding three produces six remaining ticks; reducing the total to two expires the effect immediately. Duration completion similarly retains its original application time and moves its end time by modifying the authored duration value.
+
+Temporary modifications are owned contributions. Removing their owner recompiles effective values from the immutable definition and all remaining contributions.
 
 ### Confirmed Physics-Aligned Time Representation
 
@@ -229,6 +235,8 @@ Definitions explicitly select their completion policy:
 - Future persistent effects may use an authored external removal condition instead.
 
 A periodic effect uses one authoritative completion policy, not both tick count and duration as competing termination conditions. User-facing descriptions may display a derived expected duration or expected tick count.
+
+The selected completion-policy type is immutable for the active effect. Modifiers may change total tick count for `AfterTickCount` or total duration for `AfterDuration`, but cannot convert between the policies. An authored replacement effect is required to change that structural behavior.
 
 For the first implementation, scheduling tests prove both policies. Poison will become the first gameplay effect using `AfterTickCount`, while a temporary poison-amplification radius can later prove `AfterDuration` in an authored item.
 
@@ -423,7 +431,6 @@ Every implemented effect and damage rule should have focused automated tests. Im
 3. Does over-resistance healing count as `HealingApplied`, or only as `HealthGained`, by default?
 4. Should the minimum 1 damage rule apply before or after shields and other defensive layers?
 5. Which effect tags are needed initially for item matching and triggers without creating an overly rigid taxonomy?
-6. How should temporary in-round modifications affect an already-running timed effect: snapshot its values at application or evaluate them again on later ticks?
 
 ## Confirmed Effect Independence
 

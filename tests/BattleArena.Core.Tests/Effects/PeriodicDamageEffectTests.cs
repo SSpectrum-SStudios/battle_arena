@@ -13,11 +13,11 @@ public sealed class PeriodicDamageEffectTests
     [Fact]
     public void DefinitionDefensivelyCopiesDamageAndTags()
     {
-        var portions = new[] { new DamagePortion(DamageType.Poison, 5d) };
+        var portions = new[] { Portion("primary_poison", DamageType.Poison, 5d) };
         var tags = new[] { new EffectTag("base:poison") };
         var definition = Definition(portions, tags: tags);
 
-        portions[0] = new DamagePortion(DamageType.Fire, 999d);
+        portions[0] = Portion("primary_fire", DamageType.Fire, 999d);
         tags[0] = new EffectTag("base:fire");
 
         Assert.Equal(DamageType.Poison, definition.TickDamagePortions[0].Type);
@@ -154,15 +154,15 @@ public sealed class PeriodicDamageEffectTests
     private static PeriodicDamageEffectDefinition Definition(
         double damagePerTick = 10d,
         int ticks = 3,
-        DamagePortion[]? portions = null,
+        PeriodicDamagePortionDefinition[]? portions = null,
         EffectTag[]? tags = null) =>
         Definition(
-            portions ?? [new DamagePortion(DamageType.Poison, damagePerTick)],
+            portions ?? [Portion("primary_poison", DamageType.Poison, damagePerTick)],
             ticks,
             tags);
 
     private static PeriodicDamageEffectDefinition Definition(
-        DamagePortion[] portions,
+        PeriodicDamagePortionDefinition[] portions,
         int ticks = 3,
         EffectTag[]? tags = null) =>
         new(
@@ -173,6 +173,12 @@ public sealed class PeriodicDamageEffectTests
             new PeriodicCompletionPolicy.AfterTickCount(ticks),
             EffectLifetimeScope.PerLife,
             tags ?? [new EffectTag("base:poison")]);
+
+    private static PeriodicDamagePortionDefinition Portion(
+        string id,
+        DamageType type,
+        double amount) =>
+        new(new DamagePortionId(id), type, amount);
 
     private PeriodicDamageEffectInstance Instance(
         long id,
