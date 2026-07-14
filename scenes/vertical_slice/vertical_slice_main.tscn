@@ -1,0 +1,294 @@
+[gd_scene load_steps=29 format=3]
+
+[ext_resource type="Script" path="res://scripts/vertical_slice/VerticalSliceGame.cs" id="1_game"]
+[ext_resource type="Script" path="res://scripts/vertical_slice/VerticalSlicePlayer.cs" id="2_player"]
+[ext_resource type="Script" path="res://scripts/vertical_slice/SwordAttackAdapter.cs" id="3_sword"]
+[ext_resource type="Script" path="res://scripts/vertical_slice/PoisonAuraAdapter.cs" id="4_aura"]
+[ext_resource type="Script" path="res://scripts/vertical_slice/CombatantHurtbox.cs" id="5_hurtbox"]
+[ext_resource type="Script" path="res://scripts/vertical_slice/CombatantView.cs" id="6_view"]
+[ext_resource type="Script" path="res://scripts/vertical_slice/VerticalSliceHud.cs" id="7_hud"]
+
+[sub_resource type="Environment" id="Environment_main"]
+background_mode = 1
+background_color = Color(0.32, 0.52, 0.76, 1)
+ambient_light_source = 3
+ambient_light_color = Color(0.72, 0.8, 0.92, 1)
+ambient_light_energy = 0.65
+
+[sub_resource type="BoxMesh" id="BoxMesh_floor"]
+size = Vector3(30, 0.5, 30)
+
+[sub_resource type="StandardMaterial3D" id="Material_floor"]
+albedo_color = Color(0.28, 0.58, 0.25, 1)
+roughness = 0.9
+
+[sub_resource type="BoxShape3D" id="BoxShape_floor"]
+size = Vector3(30, 0.5, 30)
+
+[sub_resource type="CapsuleShape3D" id="CapsuleShape_player"]
+radius = 0.45
+height = 1.8
+
+[sub_resource type="CapsuleMesh" id="CapsuleMesh_player"]
+radius = 0.45
+height = 1.8
+
+[sub_resource type="StandardMaterial3D" id="Material_player"]
+albedo_color = Color(0.16, 0.44, 0.95, 1)
+roughness = 0.65
+
+[sub_resource type="SphereMesh" id="SphereMesh_head"]
+radius = 0.36
+height = 0.72
+
+[sub_resource type="StandardMaterial3D" id="Material_head"]
+albedo_color = Color(0.95, 0.72, 0.48, 1)
+roughness = 0.8
+
+[sub_resource type="BoxMesh" id="BoxMesh_sword"]
+size = Vector3(0.13, 0.13, 1.45)
+
+[sub_resource type="StandardMaterial3D" id="Material_sword"]
+albedo_color = Color(0.82, 0.88, 0.96, 1)
+metallic = 0.75
+roughness = 0.25
+
+[sub_resource type="BoxShape3D" id="BoxShape_sword"]
+size = Vector3(0.34, 0.38, 1.55)
+
+[sub_resource type="SphereShape3D" id="SphereShape_aura"]
+radius = 4.0
+
+[sub_resource type="CylinderMesh" id="CylinderMesh_aura"]
+top_radius = 4.0
+bottom_radius = 4.0
+height = 0.05
+
+[sub_resource type="StandardMaterial3D" id="Material_aura"]
+transparency = 1
+shading_mode = 0
+albedo_color = Color(0.25, 0.95, 0.42, 0.2)
+
+[sub_resource type="CapsuleShape3D" id="CapsuleShape_dummy"]
+radius = 0.55
+height = 2.0
+
+[sub_resource type="CapsuleMesh" id="CapsuleMesh_dummy"]
+radius = 0.55
+height = 2.0
+
+[sub_resource type="StandardMaterial3D" id="Material_dummy"]
+albedo_color = Color(0.95, 0.3, 0.14, 1)
+roughness = 0.7
+
+[sub_resource type="StyleBoxFlat" id="StyleBox_hud"]
+bg_color = Color(0.035, 0.05, 0.08, 0.82)
+corner_radius_top_left = 8
+corner_radius_top_right = 8
+corner_radius_bottom_right = 8
+corner_radius_bottom_left = 8
+content_margin_left = 14.0
+content_margin_top = 12.0
+content_margin_right = 14.0
+content_margin_bottom = 12.0
+
+[node name="VerticalSlice" type="Node3D" groups=["vertical_slice_game"]]
+script = ExtResource("1_game")
+HudPath = NodePath("HUD")
+
+[node name="WorldEnvironment" type="WorldEnvironment" parent="."]
+environment = SubResource("Environment_main")
+
+[node name="Sun" type="DirectionalLight3D" parent="."]
+rotation_degrees = Vector3(-48, -28, 0)
+shadow_enabled = true
+directional_shadow_max_distance = 35.0
+
+[node name="Floor" type="StaticBody3D" parent="."]
+position = Vector3(0, -0.25, 0)
+collision_layer = 1
+collision_mask = 1
+
+[node name="Mesh" type="MeshInstance3D" parent="Floor"]
+mesh = SubResource("BoxMesh_floor")
+material_override = SubResource("Material_floor")
+
+[node name="Collision" type="CollisionShape3D" parent="Floor"]
+shape = SubResource("BoxShape_floor")
+
+[node name="Player" type="CharacterBody3D" parent="."]
+position = Vector3(0, 1.0, 4.5)
+collision_layer = 1
+collision_mask = 1
+script = ExtResource("2_player")
+CameraPitchPath = NodePath("CameraPitch")
+ThirdPersonCameraPath = NodePath("CameraPitch/SpringArm/ThirdPersonCamera")
+FirstPersonCameraPath = NodePath("CameraPitch/FirstPersonCamera")
+SwordAttackPath = NodePath("SwordAttack")
+PoisonAuraPath = NodePath("PoisonAura")
+
+[node name="BodyCollision" type="CollisionShape3D" parent="Player"]
+shape = SubResource("CapsuleShape_player")
+
+[node name="VisualRoot" type="Node3D" parent="Player"]
+
+[node name="Body" type="MeshInstance3D" parent="Player/VisualRoot"]
+mesh = SubResource("CapsuleMesh_player")
+material_override = SubResource("Material_player")
+
+[node name="Head" type="MeshInstance3D" parent="Player/VisualRoot"]
+position = Vector3(0, 0.82, 0)
+mesh = SubResource("SphereMesh_head")
+material_override = SubResource("Material_head")
+
+[node name="Hurtbox" type="Area3D" parent="Player"]
+collision_layer = 4
+collision_mask = 0
+monitorable = true
+script = ExtResource("5_hurtbox")
+CombatantId = 1
+
+[node name="Collision" type="CollisionShape3D" parent="Player/Hurtbox"]
+shape = SubResource("CapsuleShape_player")
+
+[node name="StatusLabel" type="Label3D" parent="Player"]
+position = Vector3(0, 1.65, 0)
+text = "100 / 100"
+font_size = 28
+outline_size = 6
+billboard = 1
+no_depth_test = true
+
+[node name="CombatantView" type="Node" parent="Player"]
+script = ExtResource("6_view")
+CombatantIdValue = 1
+MaximumHealth = 100.0
+VisualRootPath = NodePath("../VisualRoot")
+HurtboxPath = NodePath("../Hurtbox")
+BodyCollisionPath = NodePath("../BodyCollision")
+StatusLabelPath = NodePath("../StatusLabel")
+
+[node name="CameraPitch" type="Node3D" parent="Player"]
+position = Vector3(0, 1.35, 0)
+
+[node name="FirstPersonCamera" type="Camera3D" parent="Player/CameraPitch"]
+current = false
+near = 0.05
+fov = 78.0
+
+[node name="SpringArm" type="SpringArm3D" parent="Player/CameraPitch"]
+spring_length = 4.2
+margin = 0.15
+collision_mask = 1
+
+[node name="ThirdPersonCamera" type="Camera3D" parent="Player/CameraPitch/SpringArm"]
+current = true
+fov = 72.0
+
+[node name="SwordAttack" type="Node3D" parent="Player"]
+position = Vector3(0.62, 0.55, -0.15)
+script = ExtResource("3_sword")
+OwnerCombatantId = 1
+HitboxPath = NodePath("Hitbox")
+
+[node name="SwordMesh" type="MeshInstance3D" parent="Player/SwordAttack"]
+position = Vector3(0, 0, -0.78)
+mesh = SubResource("BoxMesh_sword")
+material_override = SubResource("Material_sword")
+
+[node name="Hitbox" type="Area3D" parent="Player/SwordAttack"]
+position = Vector3(0, 0, -0.78)
+collision_layer = 2
+collision_mask = 4
+monitoring = false
+monitorable = false
+
+[node name="Collision" type="CollisionShape3D" parent="Player/SwordAttack/Hitbox"]
+shape = SubResource("BoxShape_sword")
+
+[node name="PoisonAura" type="Area3D" parent="Player"]
+collision_layer = 8
+collision_mask = 4
+monitoring = false
+monitorable = false
+script = ExtResource("4_aura")
+OwnerCombatantId = 1
+VisualPath = NodePath("Visual")
+
+[node name="Collision" type="CollisionShape3D" parent="Player/PoisonAura"]
+shape = SubResource("SphereShape_aura")
+
+[node name="Visual" type="MeshInstance3D" parent="Player/PoisonAura"]
+position = Vector3(0, -0.9, 0)
+mesh = SubResource("CylinderMesh_aura")
+material_override = SubResource("Material_aura")
+cast_shadow = 0
+visible = false
+
+[node name="Dummy" type="StaticBody3D" parent="."]
+position = Vector3(0, 1.0, -1.0)
+collision_layer = 1
+collision_mask = 1
+
+[node name="BodyCollision" type="CollisionShape3D" parent="Dummy"]
+shape = SubResource("CapsuleShape_dummy")
+
+[node name="VisualRoot" type="Node3D" parent="Dummy"]
+
+[node name="Body" type="MeshInstance3D" parent="Dummy/VisualRoot"]
+mesh = SubResource("CapsuleMesh_dummy")
+material_override = SubResource("Material_dummy")
+
+[node name="Hurtbox" type="Area3D" parent="Dummy"]
+collision_layer = 4
+collision_mask = 0
+monitorable = true
+script = ExtResource("5_hurtbox")
+CombatantId = 2
+
+[node name="Collision" type="CollisionShape3D" parent="Dummy/Hurtbox"]
+shape = SubResource("CapsuleShape_dummy")
+
+[node name="StatusLabel" type="Label3D" parent="Dummy"]
+position = Vector3(0, 1.65, 0)
+text = "100 / 100"
+font_size = 34
+outline_size = 8
+billboard = 1
+no_depth_test = true
+
+[node name="CombatantView" type="Node" parent="Dummy"]
+script = ExtResource("6_view")
+CombatantIdValue = 2
+MaximumHealth = 100.0
+VisualRootPath = NodePath("../VisualRoot")
+HurtboxPath = NodePath("../Hurtbox")
+BodyCollisionPath = NodePath("../BodyCollision")
+StatusLabelPath = NodePath("../StatusLabel")
+
+[node name="HUD" type="CanvasLayer" parent="."]
+script = ExtResource("7_hud")
+StatusLabelPath = NodePath("Margin/Panel/Layout/Status")
+EffectsLabelPath = NodePath("Margin/Panel/Layout/Effects")
+
+[node name="Margin" type="MarginContainer" parent="HUD"]
+offset_left = 18.0
+offset_top = 18.0
+offset_right = 650.0
+offset_bottom = 285.0
+
+[node name="Panel" type="PanelContainer" parent="HUD/Margin"]
+theme_override_styles/panel = SubResource("StyleBox_hud")
+
+[node name="Layout" type="VBoxContainer" parent="HUD/Margin/Panel"]
+theme_override_constants/separation = 10
+
+[node name="Status" type="Label" parent="HUD/Margin/Panel/Layout"]
+text = "Loading vertical slice..."
+theme_override_colors/font_color = Color(0.95, 0.98, 1, 1)
+theme_override_font_sizes/font_size = 16
+
+[node name="Effects" type="Label" parent="HUD/Margin/Panel/Layout"]
+text = "Active effects on dummy: none"
+theme_override_colors/font_color = Color(0.72, 1, 0.76, 1)
+theme_override_font_sizes/font_size = 15
