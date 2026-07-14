@@ -68,6 +68,15 @@ public partial class VerticalSlicePlayer : CharacterBody3D
             return;
         }
 
+        if (inputEvent is InputEventMouseButton mouseButton &&
+            mouseButton.Pressed &&
+            Input.MouseMode != Input.MouseModeEnum.Captured)
+        {
+            Input.MouseMode = Input.MouseModeEnum.Captured;
+            GetViewport().SetInputAsHandled();
+            return;
+        }
+
         if (inputEvent is InputEventMouseMotion mouseMotion &&
             Input.MouseMode == Input.MouseModeEnum.Captured)
         {
