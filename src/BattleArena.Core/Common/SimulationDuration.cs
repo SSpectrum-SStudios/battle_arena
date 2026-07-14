@@ -21,5 +21,17 @@ public readonly record struct SimulationDuration : IComparable<SimulationDuratio
     public static SimulationDuration operator +(SimulationDuration left, SimulationDuration right) =>
         new(checked(left.Ticks + right.Ticks));
 
+    public static bool operator <(SimulationDuration left, SimulationDuration right) =>
+        left.Ticks < right.Ticks;
+
+    public static bool operator >(SimulationDuration left, SimulationDuration right) =>
+        left.Ticks > right.Ticks;
+
+    public static bool operator <=(SimulationDuration left, SimulationDuration right) =>
+        left.Ticks <= right.Ticks;
+
+    public static bool operator >=(SimulationDuration left, SimulationDuration right) =>
+        left.Ticks >= right.Ticks;
+
     public override string ToString() => $"{Ticks} ticks";
 }

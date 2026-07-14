@@ -404,9 +404,11 @@ Round cleanup, item replacement, or another authored rule may remove persistent 
 
 ## Respawn Interaction
 
-Player-bound temporary effects, including poison-like timed conditions, clear when the affected player respawns. Persistent world objects remain according to their source item's rules.
+Elimination immediately ends the current life and clears player-bound per-life effects, including poison-like timed conditions. The later respawn begins a new life generation at full effective health. Cleanup does not wait through the respawn delay.
 
 For example, death clears poison currently affecting the player, but it does not remove land mines already placed in the arena.
+
+An active effect already attached to another player may continue after its source dies. Damage attribution retains the original source combatant and source life generation. Source-benefit reactions such as lifesteal require that recorded source life to remain active by default, preventing an old poison from healing a dead source or that source's later respawned life.
 
 ## Testing Requirements
 

@@ -38,6 +38,8 @@ public sealed class Combatant
 
     public ActiveEffectContainer ActiveEffects { get; }
 
+    public LifeGenerationId CurrentLifeGenerationId => ActiveEffects.CurrentLifeGenerationId;
+
     public HealthApplicationResult Apply(CombatResolutionResult resolution)
     {
         ArgumentNullException.ThrowIfNull(resolution);
@@ -106,6 +108,36 @@ public sealed class Combatant
         HealthRevision++;
 
         return new MaximumHealthChangeResult(before, CreateHealthSnapshot());
+    }
+
+    public IReadOnlyList<ActiveEffectId> EndCurrentLife()
+    {
+        if (!IsEliminated)
+        {
+            throw new InvalidOperationException("A living combatant's current life cannot be ended.");
+        }
+
+        return ActiveEffects.EndCurrentLife();
+    }
+
+    public CombatantRespawnResult Respawn(LifeGenerationId newLifeGenerationId)
+    {
+        if (!IsEliminated)
+        {
+            throw new InvalidOperationException("Only an eliminated combatant can respawn.");
+        }
+
+        var before = CreateHealthSnapshot();
+        var removedEffectIds = ActiveEffects.BeginNewLife(newLifeGenerationId);
+
+        CurrentHealth = MaximumHealth;
+        IsEliminated = false;
+        HealthRevision++;
+
+        return new CombatantRespawnResult(
+            before,
+            CreateHealthSnapshot(),
+            removedEffectIds);
     }
 
     public HealthSnapshot CreateHealthSnapshot() =>

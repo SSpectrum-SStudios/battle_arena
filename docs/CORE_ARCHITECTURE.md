@@ -1138,6 +1138,20 @@ This enables replayable tests and prevents authority/client divergence.
 
 Recommendation: use explicit time values in most domain methods. Introduce a clock interface only at the application boundary rather than injecting clocks into every entity.
 
+### Combat Actions and Hit Registration
+
+An authored combat action contains an ordered list of effect operations and one structural per-target hit policy. Examples include immediate damage followed by poison, or a repeating ground area that applies fire damage at an authored interval.
+
+Beginning an action creates a match-scoped `ActionExecutionId` tied to the source combatant's current `LifeGenerationId`. Godot collision adapters report identified overlaps as hit-registration attempts; the authoritative action execution decides whether each target may be accepted.
+
+- A basic melee swing accepts one hit per target for that action execution.
+- A repeating ground area accepts another hit only after its authored per-target interval.
+- Future actions may use authored limits or other registered hit-policy strategies.
+
+Eliminating the source immediately ends source-life-bound action executions such as an active melee swing. Active effects already attached to targets are independent runtime instances and may continue after the source dies.
+
+Source-benefit reactions such as lifesteal require the recorded source life to remain active by default. A poison from an earlier life may continue dealing attributed damage, but it does not heal or otherwise benefit the source after death or after that combatant respawns into a new life. An explicitly authored policy may later opt into cross-life behavior.
+
 ### Failure Model
 
 Expected invalid commands return structured domain results rather than throwing exceptions:
@@ -1184,6 +1198,8 @@ The majority of item, effect, combat, and selection behavior should be testable 
 - Godot, Steam, filesystem, clock, randomness, and spatial behavior remain behind application-boundary adapters or explicit inputs.
 - Expected invalid commands return structured failures; exceptions represent programmer errors or corrupted internal assumptions.
 - Domain events and resolved facts use explicit queues and immutable data rather than a static global event bus.
+- Combat actions use ordered authored operations and per-target hit-policy strategies; collision adapters report candidates but do not decide whether repeated hits are legal.
+- Action executions are source-life-bound, while independently applied target effects can outlive their source life.
 
 ## Decision 4: Design Patterns and Interface Boundaries
 

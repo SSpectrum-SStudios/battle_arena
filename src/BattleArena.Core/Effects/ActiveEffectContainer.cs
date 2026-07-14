@@ -46,15 +46,8 @@ public sealed class ActiveEffectContainer
 
     public bool Remove(ActiveEffectId id) => _effects.Remove(id);
 
-    public IReadOnlyList<ActiveEffectId> BeginNewLife(LifeGenerationId newLifeGenerationId)
+    public IReadOnlyList<ActiveEffectId> EndCurrentLife()
     {
-        if (newLifeGenerationId.CompareTo(CurrentLifeGenerationId) <= 0)
-        {
-            throw new ArgumentOutOfRangeException(
-                nameof(newLifeGenerationId),
-                "A new life generation must be greater than the current generation.");
-        }
-
         var removedIds = _effects.Values
             .Where(static effect => effect.LifetimeScope == EffectLifetimeScope.PerLife)
             .Select(static effect => effect.Id)
@@ -66,7 +59,21 @@ public sealed class ActiveEffectContainer
             _effects.Remove(id);
         }
 
-        CurrentLifeGenerationId = newLifeGenerationId;
         return Array.AsReadOnly(removedIds);
+    }
+
+    public IReadOnlyList<ActiveEffectId> BeginNewLife(LifeGenerationId newLifeGenerationId)
+    {
+        if (newLifeGenerationId.CompareTo(CurrentLifeGenerationId) <= 0)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(newLifeGenerationId),
+                "A new life generation must be greater than the current generation.");
+        }
+
+        var removedIds = EndCurrentLife();
+
+        CurrentLifeGenerationId = newLifeGenerationId;
+        return removedIds;
     }
 }
