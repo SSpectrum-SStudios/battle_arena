@@ -10,6 +10,7 @@ public static class ProtocolConstants
     public const int MaxWorldObjects = 4096;
     public const int MaxEventsPerBatch = 256;
     public const int MaxDisplayNameCharacters = 32;
+    public const int MaxDefinitionIdCharacters = 128;
     public const int ClientNonceBytes = 16;
     public const int ReconnectTokenBytes = 32;
     public const uint EquipmentSlotCount = 6;

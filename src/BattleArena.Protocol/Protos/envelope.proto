@@ -23,5 +23,6 @@ message PacketEnvelope {
     JoinAccepted join_accepted = 31;
     ReconnectRequest reconnect_request = 32;
     StateBaseline state_baseline = 33;
+    MatchStart match_start = 34;
   }
 }

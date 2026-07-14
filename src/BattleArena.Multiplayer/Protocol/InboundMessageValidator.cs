@@ -52,6 +52,7 @@ public sealed class InboundMessageValidator
             PacketEnvelope.PayloadOneofCase.JoinAccepted => ValidateJoinAccepted(envelope.JoinAccepted),
             PacketEnvelope.PayloadOneofCase.ReconnectRequest => ValidateReconnectRequest(envelope.ReconnectRequest),
             PacketEnvelope.PayloadOneofCase.StateBaseline => ValidateBaseline(envelope.StateBaseline),
+            PacketEnvelope.PayloadOneofCase.MatchStart => ValidateMatchStart(envelope.MatchStart),
             _ => Invalid(ProtocolViolationCode.MissingPayload, "Envelope payload type is unsupported."),
         };
     }
@@ -72,7 +73,8 @@ public sealed class InboundMessageValidator
                 PacketEnvelope.PayloadOneofCase.AuthorityEventBatch or
                 PacketEnvelope.PayloadOneofCase.AuthorityCheckpoint or
                 PacketEnvelope.PayloadOneofCase.JoinAccepted or
-                PacketEnvelope.PayloadOneofCase.StateBaseline,
+                PacketEnvelope.PayloadOneofCase.StateBaseline or
+                PacketEnvelope.PayloadOneofCase.MatchStart,
             _ => false,
         };
 
@@ -280,6 +282,21 @@ public sealed class InboundMessageValidator
         }
 
         return ValidateCheckpoint(baseline.Checkpoint);
+    }
+
+    private static ProtocolValidationResult ValidateMatchStart(MatchStart matchStart)
+    {
+        if (string.IsNullOrWhiteSpace(matchStart.ArenaDefinitionId) ||
+            matchStart.ArenaDefinitionId.Length > ProtocolConstants.MaxDefinitionIdCharacters)
+        {
+            return Invalid(
+                ProtocolViolationCode.InvalidTextValue,
+                "Match start contains an invalid arena definition ID.");
+        }
+
+        return matchStart.MatchSeed != 0
+            ? ProtocolValidationResult.Valid
+            : Invalid(ProtocolViolationCode.InvalidNumericValue, "Match seed must be nonzero.");
     }
 
     private static bool IsFiniteInRange(float value, float minimum, float maximum) =>

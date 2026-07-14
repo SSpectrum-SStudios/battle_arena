@@ -1,0 +1,76 @@
+[gd_scene load_steps=8 format=3]
+
+[ext_resource type="Script" path="res://scripts/multiplayer/NetworkArena.cs" id="1_arena"]
+[ext_resource type="PackedScene" path="res://scenes/multiplayer/network_avatar.tscn" id="2_avatar"]
+
+[sub_resource type="Environment" id="Environment_main"]
+background_mode = 1
+background_color = Color(0.32, 0.52, 0.76, 1)
+ambient_light_source = 3
+ambient_light_color = Color(0.72, 0.8, 0.92, 1)
+ambient_light_energy = 0.65
+
+[sub_resource type="BoxMesh" id="BoxMesh_floor"]
+size = Vector3(30, 0.5, 30)
+
+[sub_resource type="StandardMaterial3D" id="Material_floor"]
+albedo_color = Color(0.28, 0.58, 0.25, 1)
+roughness = 0.9
+
+[sub_resource type="BoxShape3D" id="BoxShape_floor"]
+size = Vector3(30, 0.5, 30)
+
+[sub_resource type="StyleBoxFlat" id="StyleBox_hud"]
+bg_color = Color(0.035, 0.05, 0.08, 0.82)
+corner_radius_top_left = 8
+corner_radius_top_right = 8
+corner_radius_bottom_right = 8
+corner_radius_bottom_left = 8
+content_margin_left = 14.0
+content_margin_top = 10.0
+content_margin_right = 14.0
+content_margin_bottom = 10.0
+
+[node name="NetworkArena" type="Node3D"]
+script = ExtResource("1_arena")
+AvatarScene = ExtResource("2_avatar")
+AvatarsPath = NodePath("Avatars")
+StatusLabelPath = NodePath("HUD/Margin/Panel/Status")
+
+[node name="WorldEnvironment" type="WorldEnvironment" parent="."]
+environment = SubResource("Environment_main")
+
+[node name="Sun" type="DirectionalLight3D" parent="."]
+rotation_degrees = Vector3(-48, -28, 0)
+shadow_enabled = true
+directional_shadow_max_distance = 35.0
+
+[node name="Floor" type="StaticBody3D" parent="."]
+position = Vector3(0, -0.25, 0)
+collision_layer = 1
+collision_mask = 1
+
+[node name="Mesh" type="MeshInstance3D" parent="Floor"]
+mesh = SubResource("BoxMesh_floor")
+material_override = SubResource("Material_floor")
+
+[node name="Collision" type="CollisionShape3D" parent="Floor"]
+shape = SubResource("BoxShape_floor")
+
+[node name="Avatars" type="Node3D" parent="."]
+
+[node name="HUD" type="CanvasLayer" parent="."]
+
+[node name="Margin" type="MarginContainer" parent="HUD"]
+offset_left = 18.0
+offset_top = 18.0
+offset_right = 850.0
+offset_bottom = 82.0
+
+[node name="Panel" type="PanelContainer" parent="HUD/Margin"]
+theme_override_styles/panel = SubResource("StyleBox_hud")
+
+[node name="Status" type="Label" parent="HUD/Margin/Panel"]
+text = "Starting network arena..."
+theme_override_colors/font_color = Color(0.95, 0.98, 1, 1)
+theme_override_font_sizes/font_size = 16

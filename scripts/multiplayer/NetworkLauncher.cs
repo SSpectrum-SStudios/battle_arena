@@ -3,6 +3,7 @@
 using BattleArena.Multiplayer.Connection;
 using BattleArena.Multiplayer.Protocol;
 using BattleArena.Multiplayer.Transport;
+using BattleArena.Protocol.V1;
 using Godot;
 
 namespace BattleArena.GodotNetworking;
@@ -19,12 +20,18 @@ public partial class NetworkLauncher : Control
     private Button _offlineButton = null!;
     private Button _hostButton = null!;
     private Button _joinButton = null!;
+    private Button _startButton = null!;
     private Label _status = null!;
+    private ColorRect _background = null!;
+    private CenterContainer _center = null!;
+    private Node3D _arenaRoot = null!;
     private AuthorityConnectionService? _authorityService;
     private ClientConnectionService? _clientService;
     private string _requestedDisplayName = "Player";
     private bool _joinRequestSent;
     private bool _quitAfterConnected;
+    private bool _autoStart;
+    private NetworkArena? _arena;
 
     public override void _Ready()
     {
@@ -35,15 +42,21 @@ public partial class NetworkLauncher : Control
         _offlineButton = GetNode<Button>("Center/Panel/Margin/Layout/Buttons/Offline");
         _hostButton = GetNode<Button>("Center/Panel/Margin/Layout/Buttons/Host");
         _joinButton = GetNode<Button>("Center/Panel/Margin/Layout/Buttons/Join");
+        _startButton = GetNode<Button>("Center/Panel/Margin/Layout/StartMatch");
         _status = GetNode<Label>("Center/Panel/Margin/Layout/Status");
+        _background = GetNode<ColorRect>("Background");
+        _center = GetNode<CenterContainer>("Center");
+        _arenaRoot = GetNode<Node3D>("ArenaRoot");
 
         _offlineButton.Pressed += StartOffline;
         _hostButton.Pressed += Host;
         _joinButton.Pressed += Join;
+        _startButton.Pressed += StartHostedMatch;
         _transport.StatusChanged += SetStatus;
         _transport.PeerConnected += OnTransportPeerConnected;
 
         _port.Value = DefaultPort;
+        _startButton.Disabled = true;
         ProcessCommandLine(OS.GetCmdlineUserArgs());
     }
 
@@ -112,6 +125,7 @@ public partial class NetworkLauncher : Control
             new InboundMessageValidator(),
             new CryptographicSessionCredentialGenerator());
         _clientService.JoinAccepted += OnJoinAccepted;
+        _clientService.MatchStarted += OnRemoteMatchStarted;
         _clientService.ProtocolViolationDetected += violation =>
             SetStatus($"Protocol error: {violation.Message}");
         _clientService.AuthorityTransportDisconnected += () =>
@@ -146,6 +160,12 @@ public partial class NetworkLauncher : Control
             $"{player.DisplayName} joined\n" +
             $"Player {player.PlayerId}, combatant {player.CombatantId}\n" +
             $"Connected remote players: {_authorityService?.ConnectedPlayers.Count ?? 0}");
+        _startButton.Disabled = false;
+        if (_autoStart)
+        {
+            StartHostedMatch();
+        }
+
         ScheduleTestQuitIfRequested();
     }
 
@@ -156,6 +176,56 @@ public partial class NetworkLauncher : Control
             $"Assigned player {identity.PlayerId}, combatant {identity.CombatantId}\n" +
             $"Simulation {identity.SimulationTicksPerSecond} Hz, snapshots {identity.SnapshotRate} Hz");
         ScheduleTestQuitIfRequested();
+    }
+
+    private void StartHostedMatch()
+    {
+        if (_authorityService is null || _authorityService.ConnectedPlayers.Count == 0 || _arena is not null)
+        {
+            return;
+        }
+
+        _startButton.Disabled = true;
+        _authorityService.StartMatch(
+            "base:vertical_slice_arena",
+            _authorityService.SessionId,
+            authorityStartTick: 0);
+        EnterArenaAsAuthority(authorityStartTick: 0);
+    }
+
+    private void OnRemoteMatchStarted(MatchStart matchStart)
+    {
+        if (_clientService?.Identity is null || _arena is not null)
+        {
+            return;
+        }
+
+        EnterArenaAsClient(matchStart.AuthorityStartTick);
+    }
+
+    private void EnterArenaAsAuthority(ulong authorityStartTick)
+    {
+        var arena = GD.Load<PackedScene>("res://scenes/multiplayer/network_arena.tscn")
+            .Instantiate<NetworkArena>();
+        arena.InitializeAuthority(_transport, _authorityService!, authorityStartTick);
+        EnterArena(arena);
+    }
+
+    private void EnterArenaAsClient(ulong authorityStartTick)
+    {
+        var arena = GD.Load<PackedScene>("res://scenes/multiplayer/network_arena.tscn")
+            .Instantiate<NetworkArena>();
+        arena.InitializeClient(_transport, _clientService!, authorityStartTick);
+        EnterArena(arena);
+    }
+
+    private void EnterArena(NetworkArena arena)
+    {
+        _arena = arena;
+        _background.Hide();
+        _center.Hide();
+        _arenaRoot.AddChild(arena);
+        GD.Print("[NetworkLauncher] Synchronized network arena started");
     }
 
     private void OnAuthorityProtocolViolation(NetworkPeerId peerId, ProtocolViolation violation) =>
@@ -174,6 +244,7 @@ public partial class NetworkLauncher : Control
         _clientService?.Dispose();
         _clientService = null;
         _joinRequestSent = false;
+        _startButton.Disabled = true;
         _transport.Stop();
         SetConnectionControlsEnabled(true);
     }
@@ -232,6 +303,10 @@ public partial class NetworkLauncher : Control
             else if (argument == "--quit-after-connected")
             {
                 _quitAfterConnected = true;
+            }
+            else if (argument == "--auto-start")
+            {
+                _autoStart = true;
             }
         }
 

@@ -34,3 +34,9 @@ message StateBaseline {
   fixed64 controlled_combatant_id = 2;
   AuthorityCheckpoint checkpoint = 3;
 }
+
+message MatchStart {
+  string arena_definition_id = 1;
+  fixed64 match_seed = 2;
+  uint64 authority_start_tick = 3;
+}

@@ -46,6 +46,38 @@ public sealed class AuthorityConnectionService : IDisposable
 
     public IReadOnlyCollection<ConnectedPlayer> ConnectedPlayers => _players.Values;
 
+    public void StartMatch(string arenaDefinitionId, ulong matchSeed, ulong authorityStartTick)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(arenaDefinitionId);
+        if (matchSeed == 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(matchSeed));
+        }
+
+        foreach (var player in _players.Values)
+        {
+            var start = new PacketEnvelope
+            {
+                ProtocolVersion = ProtocolConstants.CurrentVersion,
+                SessionId = SessionId,
+                Sequence = _nextEnvelopeSequence++,
+                SimulationTick = authorityStartTick,
+                MatchStart = new MatchStart
+                {
+                    ArenaDefinitionId = arenaDefinitionId,
+                    MatchSeed = matchSeed,
+                    AuthorityStartTick = authorityStartTick,
+                },
+            };
+
+            _transport.Send(new OutboundTransportPacket(
+                player.PeerId,
+                TransportChannel.Connection,
+                TransportDelivery.ReliableOrdered,
+                _codec.Encode(start)));
+        }
+    }
+
     public void Dispose()
     {
         if (_disposed)

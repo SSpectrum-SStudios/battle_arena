@@ -85,6 +85,38 @@ public sealed class ConnectionHandshakeTests
         Assert.Empty(transport.SentPackets);
     }
 
+    [Fact]
+    public void AuthorityStartsMatchForAuthenticatedClient()
+    {
+        var authorityTransport = new FakeTransport();
+        var clientTransport = new FakeTransport();
+        var codec = new ProtobufProtocolCodec();
+        var validator = new InboundMessageValidator();
+        var credentials = new DeterministicCredentialGenerator();
+        using var authority = new AuthorityConnectionService(
+            authorityTransport,
+            codec,
+            validator,
+            credentials,
+            new AuthoritySessionConfiguration(60, 30, 60));
+        using var client = new ClientConnectionService(clientTransport, codec, validator, credentials);
+        MatchStart? receivedStart = null;
+        client.MatchStarted += start => receivedStart = start;
+
+        client.BeginJoin(AuthorityPeer, "Remote Player");
+        authorityTransport.Receive(ClientPeer, Assert.Single(clientTransport.SentPackets));
+        clientTransport.Receive(AuthorityPeer, Assert.Single(authorityTransport.SentPackets));
+        authorityTransport.SentPackets.Clear();
+
+        authority.StartMatch("base:vertical_slice_arena", 1234, 90);
+        clientTransport.Receive(AuthorityPeer, Assert.Single(authorityTransport.SentPackets));
+
+        Assert.NotNull(receivedStart);
+        Assert.Equal("base:vertical_slice_arena", receivedStart.ArenaDefinitionId);
+        Assert.Equal(1234UL, receivedStart.MatchSeed);
+        Assert.Equal(90UL, receivedStart.AuthorityStartTick);
+    }
+
     private sealed class FakeTransport : INetworkTransport
     {
         public event Action<InboundTransportPacket>? PacketReceived;

@@ -32,11 +32,15 @@ public sealed class ClientConnectionService : IDisposable
 
     public event Action<ClientSessionIdentity>? JoinAccepted;
 
+    public event Action<MatchStart>? MatchStarted;
+
     public event Action<ProtocolViolation>? ProtocolViolationDetected;
 
     public event Action? AuthorityTransportDisconnected;
 
     public ClientSessionIdentity? Identity { get; private set; }
+
+    public NetworkPeerId? AuthorityPeer => _authorityPeer;
 
     public void BeginJoin(NetworkPeerId authorityPeer, string displayName)
     {
@@ -108,7 +112,13 @@ public sealed class ClientConnectionService : IDisposable
             return;
         }
 
-        if (decoded.Envelope!.PayloadCase != PacketEnvelope.PayloadOneofCase.JoinAccepted)
+        if (decoded.Envelope!.PayloadCase == PacketEnvelope.PayloadOneofCase.MatchStart)
+        {
+            MatchStarted?.Invoke(decoded.Envelope.MatchStart.Clone());
+            return;
+        }
+
+        if (decoded.Envelope.PayloadCase != PacketEnvelope.PayloadOneofCase.JoinAccepted)
         {
             return;
         }

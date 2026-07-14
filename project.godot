@@ -26,6 +26,7 @@ project/assembly_name="Battle Arena"
 [physics]
 
 common/physics_ticks_per_second=60
+common/physics_interpolation=true
 
 [input]
 

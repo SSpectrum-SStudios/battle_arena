@@ -17,10 +17,13 @@ anchor_right = 1.0
 anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
+mouse_filter = 2
 script = ExtResource("1_launcher")
 
 [node name="EnetTransport" type="Node" parent="."]
 script = ExtResource("2_transport")
+
+[node name="ArenaRoot" type="Node3D" parent="."]
 
 [node name="Background" type="ColorRect" parent="."]
 layout_mode = 1
@@ -115,6 +118,11 @@ text = "Host Game"
 [node name="Join" type="Button" parent="Center/Panel/Margin/Layout/Buttons"]
 layout_mode = 2
 text = "Join Game"
+
+[node name="StartMatch" type="Button" parent="Center/Panel/Margin/Layout"]
+layout_mode = 2
+disabled = true
+text = "Start Match"
 
 [node name="Status" type="Label" parent="Center/Panel/Margin/Layout"]
 custom_minimum_size = Vector2(0, 78)

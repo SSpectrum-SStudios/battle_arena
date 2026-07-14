@@ -1,0 +1,77 @@
+[gd_scene load_steps=7 format=3]
+
+[ext_resource type="Script" path="res://scripts/multiplayer/NetworkAvatar.cs" id="1_avatar"]
+
+[sub_resource type="CapsuleShape3D" id="CapsuleShape_body"]
+radius = 0.45
+height = 1.8
+
+[sub_resource type="CapsuleMesh" id="CapsuleMesh_body"]
+radius = 0.45
+height = 1.8
+
+[sub_resource type="SphereMesh" id="SphereMesh_head"]
+radius = 0.36
+height = 0.72
+
+[sub_resource type="BoxMesh" id="BoxMesh_sword"]
+size = Vector3(0.13, 0.13, 1.45)
+
+[sub_resource type="StandardMaterial3D" id="Material_sword"]
+albedo_color = Color(0.82, 0.88, 0.96, 1)
+metallic = 0.75
+roughness = 0.25
+
+[node name="NetworkAvatar" type="CharacterBody3D"]
+collision_layer = 1
+collision_mask = 1
+script = ExtResource("1_avatar")
+CameraPitchPath = NodePath("CameraPitch")
+ThirdPersonCameraPath = NodePath("CameraPitch/SpringArm/ThirdPersonCamera")
+FirstPersonCameraPath = NodePath("CameraPitch/FirstPersonCamera")
+CollisionPath = NodePath("BodyCollision")
+BodyMeshPath = NodePath("VisualRoot/Body")
+HeadMeshPath = NodePath("VisualRoot/Head")
+LabelPath = NodePath("StatusLabel")
+
+[node name="BodyCollision" type="CollisionShape3D" parent="."]
+shape = SubResource("CapsuleShape_body")
+
+[node name="VisualRoot" type="Node3D" parent="."]
+
+[node name="Body" type="MeshInstance3D" parent="VisualRoot"]
+mesh = SubResource("CapsuleMesh_body")
+
+[node name="Head" type="MeshInstance3D" parent="VisualRoot"]
+position = Vector3(0, 0.82, 0)
+mesh = SubResource("SphereMesh_head")
+
+[node name="Sword" type="MeshInstance3D" parent="VisualRoot"]
+position = Vector3(0.62, 0.55, -0.78)
+mesh = SubResource("BoxMesh_sword")
+material_override = SubResource("Material_sword")
+
+[node name="StatusLabel" type="Label3D" parent="."]
+position = Vector3(0, 1.68, 0)
+text = "Player"
+font_size = 26
+outline_size = 6
+billboard = 1
+no_depth_test = true
+
+[node name="CameraPitch" type="Node3D" parent="."]
+position = Vector3(0, 1.35, 0)
+
+[node name="FirstPersonCamera" type="Camera3D" parent="CameraPitch"]
+current = false
+near = 0.05
+fov = 78.0
+
+[node name="SpringArm" type="SpringArm3D" parent="CameraPitch"]
+spring_length = 4.2
+margin = 0.15
+collision_mask = 1
+
+[node name="ThirdPersonCamera" type="Camera3D" parent="CameraPitch/SpringArm"]
+current = false
+fov = 72.0
