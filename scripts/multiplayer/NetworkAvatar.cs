@@ -39,6 +39,7 @@ public partial class NetworkAvatar : CharacterBody3D
     private bool _locallyControlled;
     private bool _collisionEnabled;
     private bool _firstPerson;
+    private bool _gameplayInputEnabled;
     private float _yaw;
     private float _pitch;
     private Color _color;
@@ -104,7 +105,19 @@ public partial class NetworkAvatar : CharacterBody3D
         if (_locallyControlled)
         {
             Input.MouseMode = Input.MouseModeEnum.Captured;
+            _gameplayInputEnabled = true;
         }
+    }
+
+    public override void _Notification(int what)
+    {
+        if (!_locallyControlled || what != NotificationWMWindowFocusOut)
+        {
+            return;
+        }
+
+        _gameplayInputEnabled = false;
+        Input.MouseMode = Input.MouseModeEnum.Visible;
     }
 
     public override void _UnhandledInput(InputEvent inputEvent)
@@ -116,9 +129,8 @@ public partial class NetworkAvatar : CharacterBody3D
 
         if (inputEvent is InputEventKey keyEvent && keyEvent.Pressed && keyEvent.Keycode == Key.Escape)
         {
-            Input.MouseMode = Input.MouseMode == Input.MouseModeEnum.Captured
-                ? Input.MouseModeEnum.Visible
-                : Input.MouseModeEnum.Captured;
+            _gameplayInputEnabled = false;
+            Input.MouseMode = Input.MouseModeEnum.Visible;
             GetViewport().SetInputAsHandled();
             return;
         }
@@ -128,6 +140,7 @@ public partial class NetworkAvatar : CharacterBody3D
             Input.MouseMode != Input.MouseModeEnum.Captured)
         {
             Input.MouseMode = Input.MouseModeEnum.Captured;
+            _gameplayInputEnabled = true;
             GetViewport().SetInputAsHandled();
             return;
         }
@@ -141,6 +154,11 @@ public partial class NetworkAvatar : CharacterBody3D
 
     public NetworkMovementInput CaptureInput(ulong sequence, ulong clientTick, float delta)
     {
+        if (!_gameplayInputEnabled || !GetWindow().HasFocus())
+        {
+            return NetworkMovementInput.Neutral(clientTick, _yaw, _pitch) with { Sequence = sequence };
+        }
+
         var controllerLook = Input.GetVector(
             VerticalSliceInput.LookLeft,
             VerticalSliceInput.LookRight,

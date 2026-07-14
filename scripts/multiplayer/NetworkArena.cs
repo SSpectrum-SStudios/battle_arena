@@ -504,10 +504,15 @@ public partial class NetworkArena : Node3D
 
     private void UpdateStatus()
     {
+        var horizontalSpeed = new Vector2(_localAvatar.Velocity.X, _localAvatar.Velocity.Z).Length();
         _statusLabel.Text = _mode == ArenaMode.Authority
-            ? $"HOST AUTHORITY  |  tick {_simulationTick}  |  snapshots 30 Hz  |  players {_avatars.Count}"
+            ? $"HOST AUTHORITY  |  tick {_simulationTick}  |  speed {horizontalSpeed:0.0} m/s  |  snapshots 30 Hz  |  players {_avatars.Count}\n" +
+              "MOVEMENT TEST ONLY — attacks and combat are not networked yet\n" +
+              "Escape releases the mouse; click the game to resume control"
             : _authorityAvailable
-                ? $"CLIENT PREDICTION  |  tick {_simulationTick}  |  unacked {_predictionHistory.Count}  |  last correction {_lastCorrectionDistance:0.000} m"
+                ? $"CLIENT PREDICTION  |  tick {_simulationTick}  |  speed {horizontalSpeed:0.0} m/s  |  unacked {_predictionHistory.Count}  |  last correction {_lastCorrectionDistance:0.000} m\n" +
+                  "MOVEMENT TEST ONLY — attacks and combat are not networked yet\n" +
+                  "Escape releases the mouse; click the game to resume control"
                 : "CONNECTION INTERRUPTED  |  waiting for authority reconnection";
     }
 
