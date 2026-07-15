@@ -18,6 +18,7 @@ message CombatantSnapshot {
   int32 remaining_lives = 10;
   ReplicatedLifeState life_state = 11;
   uint64 last_processed_input_sequence = 12;
+  bool is_grounded = 13;
 }
 
 message ActiveEffectSnapshot {

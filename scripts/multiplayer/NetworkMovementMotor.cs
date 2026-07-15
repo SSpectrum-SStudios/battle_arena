@@ -26,7 +26,11 @@ public sealed class NetworkMovementMotor
 
     public float Gravity { get; }
 
-    public void Simulate(NetworkAvatar avatar, NetworkMovementInput input, float delta)
+    public void Simulate(
+        NetworkAvatar avatar,
+        NetworkMovementInput input,
+        float delta,
+        bool? groundedOverride = null)
     {
         avatar.Rotation = new Vector3(0, input.YawRadians, 0);
         avatar.SetPitch(input.PitchRadians);
@@ -44,7 +48,8 @@ public sealed class NetworkMovementMotor
         velocity.X = desired.X * speed;
         velocity.Z = desired.Z * speed;
 
-        if (!avatar.IsOnFloor())
+        var isGrounded = groundedOverride ?? avatar.IsOnFloor();
+        if (!isGrounded)
         {
             velocity.Y -= Gravity * delta;
         }

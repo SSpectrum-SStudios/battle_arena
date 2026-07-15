@@ -71,6 +71,7 @@ public sealed class ProtobufProtocolCodecTests
             RemainingLives = 1,
             LifeState = ReplicatedLifeState.Alive,
             LastProcessedInputSequence = 41,
+            IsGrounded = true,
         });
         envelope.AuthorityCheckpoint.ActiveEffects.Add(new ActiveEffectSnapshot
         {
@@ -90,6 +91,7 @@ public sealed class ProtobufProtocolCodecTests
         var decoded = Assert.IsType<PacketEnvelope>(result.Envelope);
         Assert.Equal(7UL, decoded.AuthorityCheckpoint.Revision.EntityRevision);
         Assert.Equal(80L, decoded.AuthorityCheckpoint.Combatants[0].CurrentHealth);
+        Assert.True(decoded.AuthorityCheckpoint.Combatants[0].IsGrounded);
         Assert.Equal("base:greater_poison", decoded.AuthorityCheckpoint.ActiveEffects[0].EffectDefinitionId);
         Assert.Equal(850UL, decoded.AuthorityCheckpoint.ActiveEffects[0].ExpiresTick);
     }

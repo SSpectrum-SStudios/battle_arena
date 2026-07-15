@@ -56,6 +56,7 @@ public partial class NetworkArena : Node3D
     private float _lastCorrectionDistance;
     private bool _configured;
     private bool _authorityAvailable = true;
+    private bool? _localGroundedOverride;
     private long _acceptedInputPackets;
     private long _acceptedSnapshots;
     private ulong _latestAuthoritySnapshotTick;
@@ -265,7 +266,8 @@ public partial class NetworkArena : Node3D
             _predictionHistory.RemoveAt(0);
         }
 
-        _movementMotor.Simulate(_localAvatar, input, delta);
+        _movementMotor.Simulate(_localAvatar, input, delta, _localGroundedOverride);
+        _localGroundedOverride = null;
         SendInputBatch();
     }
 
@@ -456,16 +458,18 @@ public partial class NetworkArena : Node3D
             authoritative.ViewYawRadians,
             authoritative.ViewPitchRadians);
 
+        bool? groundedOverride = authoritative.IsGrounded;
         foreach (var input in _predictionHistory)
         {
-            _movementMotor.Simulate(_localAvatar, input, FixedDelta);
+            _movementMotor.Simulate(_localAvatar, input, FixedDelta, groundedOverride);
+            groundedOverride = null;
         }
+
+        _localGroundedOverride = groundedOverride;
 
         // The client owns its camera orientation. Authority snapshots correct
         // motion, but must not rewind locally sampled look input.
         _localAvatar.ApplyView(localYaw, localPitch);
-        _localAvatar.ApplyVerticalPresentationCorrection(
-            predictedPosition.Y - _localAvatar.Position.Y);
         _lastCorrectionDistance = predictedPosition.DistanceTo(_localAvatar.Position);
         _localAvatar.SetDiagnosticText($"correction {_lastCorrectionDistance:0.000} m");
     }
@@ -585,6 +589,7 @@ public partial class NetworkArena : Node3D
         RemainingLives = 1,
         LifeState = ReplicatedLifeState.Alive,
         LastProcessedInputSequence = processedInput,
+        IsGrounded = avatar.IsOnFloor(),
     };
 
     private static Vector3Value ToProtocol(Vector3 value) => new()
