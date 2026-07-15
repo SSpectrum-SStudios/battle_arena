@@ -2,8 +2,8 @@
 {
     "AppID" "3820160"
     "Desc" "Battle Arena Windows build"
-    "BuildOutput" "..\\build\\steam\\output"
-    "ContentRoot" "..\\build\\steam\\windows"
+    "BuildOutput" "..\build\steam\output"
+    "ContentRoot" "..\build\steam\windows"
     "Preview" "0"
     "Depots"
     {

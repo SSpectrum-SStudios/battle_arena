@@ -1,7 +1,6 @@
 "DepotBuild"
 {
     "DepotID" "3820161"
-    "ContentRoot" "..\\build\\steam\\windows"
     "FileMapping"
     {
         "LocalPath" "*"
