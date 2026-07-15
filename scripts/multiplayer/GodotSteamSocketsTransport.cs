@@ -3,6 +3,7 @@
 using BattleArena.Multiplayer.Transport;
 using Godot;
 using GodotSteam;
+using Steam = GodotSteam.Steam;
 
 namespace BattleArena.GodotNetworking;
 
