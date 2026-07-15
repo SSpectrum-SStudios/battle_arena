@@ -26,6 +26,30 @@ SteamCMD handles password and Steam Guard prompts interactively. Never place a p
 
 The upload creates a Steamworks build but does not make it live. In Steamworks, assign the uploaded build to a password-protected test branch and grant both tester accounts access before attempting a two-computer test.
 
+## Credential-safe first login
+
+Use a dedicated Steam build account with only the Steamworks permissions needed to upload this app. Open a normal PowerShell window outside Codex and run:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\tools\steam\open_steamcmd_login.ps1
+```
+
+At the `Steam>` prompt, enter `login YOUR_BUILD_ACCOUNT`. Enter the password and Steam Guard code only into SteamCMD's interactive prompts, then enter `quit`. SteamCMD caches its login token under the Steamworks SDK's ContentBuilder directory, which is outside this repository.
+
+Never put a password, Steam Guard code, Web API key, or cached Steam `config.vdf` in this repository, a command-line argument, an environment variable, or a Codex message. App IDs, depot IDs, branch names, and the Steam account name are not authentication secrets.
+
+## One-command alpha publishing
+
+After creating a beta branch in Steamworks, export, upload, and assign the new build to that branch with:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\tools\steam\publish_windows.ps1 `
+    -SteamAccount YOUR_BUILD_ACCOUNT `
+    -BetaBranch YOUR_BETA_BRANCH
+```
+
+The beta branch must already exist in Steamworks. The script generates a temporary ignored VDF containing `SetLive`, uploads the build, assigns it to that branch, and removes the temporary file. Use `-SkipExport` when retrying an upload without rebuilding.
+
 ## Multiplayer test
 
 1. Launch the game through Steam on two different Steam accounts.

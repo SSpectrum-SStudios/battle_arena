@@ -23,3 +23,10 @@ mono_crash.*.json
 
 # Generated exports and SteamPipe build output
 build/
+
+# Local secrets and generated SteamPipe scripts
+.env
+.env.*
+!.env.example
+*.secrets.json
+steam/*.local.vdf
