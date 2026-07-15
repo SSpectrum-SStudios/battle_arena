@@ -448,8 +448,6 @@ public partial class NetworkArena : Node3D
         // The client owns its camera orientation. Authority snapshots correct
         // motion, but must not rewind locally sampled look input.
         _localAvatar.ApplyView(localYaw, localPitch);
-        _localAvatar.PreservePresentationAfterCorrection(predictedPosition);
-
         _lastCorrectionDistance = predictedPosition.DistanceTo(_localAvatar.Position);
         _localAvatar.SetDiagnosticText($"correction {_lastCorrectionDistance:0.000} m");
     }

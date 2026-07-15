@@ -7,11 +7,6 @@ namespace BattleArena.GodotNetworking;
 
 public partial class NetworkAvatar : CharacterBody3D
 {
-    private const float PresentationCorrectionHalfLifeSeconds = 0.09f;
-    private const float PresentationCorrectionDeadzoneMeters = 0.01f;
-    private const float PresentationCorrectionSnapDistanceMeters = 1.5f;
-    private const float PresentationCorrectionFinishedMeters = 0.001f;
-
     [Export]
     public NodePath CameraPitchPath { get; set; } = "";
 
@@ -49,10 +44,6 @@ public partial class NetworkAvatar : CharacterBody3D
     private float _pitch;
     private Color _color;
     private string _displayLabel = "Player";
-    private Vector3 _visualRootBasePosition;
-    private Vector3 _cameraPitchBasePosition;
-    private Vector3 _labelBasePosition;
-    private Vector3 _presentationOffset;
 
     public ulong CombatantId { get; private set; }
 
@@ -96,9 +87,6 @@ public partial class NetworkAvatar : CharacterBody3D
         _bodyMesh = GetNode<MeshInstance3D>(BodyMeshPath);
         _headMesh = GetNode<MeshInstance3D>(HeadMeshPath);
         _label = GetNode<Label3D>(LabelPath);
-        _visualRootBasePosition = _bodyMesh.GetParent<Node3D>().Position;
-        _cameraPitchBasePosition = _cameraPitch.Position;
-        _labelBasePosition = _label.Position;
 
         _collision.Disabled = !_collisionEnabled;
         PhysicsInterpolationMode = _locallyControlled
@@ -119,26 +107,6 @@ public partial class NetworkAvatar : CharacterBody3D
             Input.MouseMode = Input.MouseModeEnum.Captured;
             _gameplayInputEnabled = true;
         }
-    }
-
-    public override void _Process(double delta)
-    {
-        if (!_locallyControlled || _presentationOffset.IsZeroApprox())
-        {
-            return;
-        }
-
-        var remaining = Mathf.Pow(
-            0.5f,
-            (float)delta / PresentationCorrectionHalfLifeSeconds);
-        _presentationOffset *= remaining;
-        if (_presentationOffset.LengthSquared() <=
-            PresentationCorrectionFinishedMeters * PresentationCorrectionFinishedMeters)
-        {
-            _presentationOffset = Vector3.Zero;
-        }
-
-        ApplyPresentationOffset();
     }
 
     public override void _Notification(int what)
@@ -249,35 +217,6 @@ public partial class NetworkAvatar : CharacterBody3D
         SetPitch(pitch);
     }
 
-    public void PreservePresentationAfterCorrection(Vector3 previousPhysicsPosition)
-    {
-        if (!_locallyControlled)
-        {
-            return;
-        }
-
-        var correction = previousPhysicsPosition - Position;
-        if (correction.LengthSquared() <=
-            PresentationCorrectionDeadzoneMeters * PresentationCorrectionDeadzoneMeters)
-        {
-            return;
-        }
-
-        var existingWorldOffset = GlobalBasis * _presentationOffset;
-        var combinedWorldOffset = existingWorldOffset + correction;
-        if (combinedWorldOffset.LengthSquared() >=
-            PresentationCorrectionSnapDistanceMeters * PresentationCorrectionSnapDistanceMeters)
-        {
-            _presentationOffset = Vector3.Zero;
-        }
-        else
-        {
-            _presentationOffset = GlobalBasis.Inverse() * combinedWorldOffset;
-        }
-
-        ApplyPresentationOffset();
-    }
-
     public void SetPitch(float pitch)
     {
         _pitch = Mathf.Clamp(pitch, Mathf.DegToRad(-75f), Mathf.DegToRad(70f));
@@ -307,13 +246,6 @@ public partial class NetworkAvatar : CharacterBody3D
     {
         _gameplayInputEnabled = false;
         Input.MouseMode = Input.MouseModeEnum.Visible;
-    }
-
-    private void ApplyPresentationOffset()
-    {
-        _bodyMesh.GetParent<Node3D>().Position = _visualRootBasePosition + _presentationOffset;
-        _cameraPitch.Position = _cameraPitchBasePosition + _presentationOffset;
-        _label.Position = _labelBasePosition + _presentationOffset;
     }
 
     private void ApplyCameraMode()
