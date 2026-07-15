@@ -14,10 +14,12 @@ public partial class NetworkArena : Node3D
 {
     private const ulong HostCombatantId = 1;
     private const float FixedDelta = 1f / 60f;
-    private const ulong InterpolationDelayTicks = 2;
+    private const ulong BufferedInterpolationDelayTicks = 2;
     private const double MaximumInterpolationClockDriftTicks = 2.0;
     private const int RedundantInputFrameCount = 3;
     private const int MaximumPredictionHistory = 256;
+    private static readonly StringName ToggleRemoteInterpolationAction =
+        new("debug_toggle_remote_interpolation");
 
     [Export]
     public PackedScene AvatarScene { get; set; } = null!;
@@ -59,6 +61,7 @@ public partial class NetworkArena : Node3D
     private ulong _latestAuthoritySnapshotTick;
     private ulong _lastSnapshotArrivalMicroseconds;
     private double _remoteInterpolationLagTicks;
+    private bool _remoteInterpolationEnabled = true;
 
     public void InitializeAuthority(
         GodotEnetTransport transport,
@@ -99,6 +102,7 @@ public partial class NetworkArena : Node3D
         }
 
         VerticalSliceInput.EnsureDefaultBindings();
+        EnsureDebugInputBinding();
         _avatarsRoot = GetNode<Node3D>(AvatarsPath);
         _statusLabel = GetNode<Label>(StatusLabelPath);
         _transport.PacketReceived += OnPacketReceived;
@@ -135,6 +139,12 @@ public partial class NetworkArena : Node3D
     {
         if (_mode == ArenaMode.Client)
         {
+            if (Input.IsActionJustPressed(ToggleRemoteInterpolationAction))
+            {
+                _remoteInterpolationEnabled = !_remoteInterpolationEnabled;
+                _remoteRenderTicks.Clear();
+            }
+
             InterpolateRemoteAvatars(delta);
         }
     }
@@ -470,9 +480,17 @@ public partial class NetworkArena : Node3D
 
             var samples = pair.Value;
             var latestTick = samples[^1].AuthorityTick;
-            var desiredTargetTick = latestTick > InterpolationDelayTicks
-                ? latestTick - InterpolationDelayTicks
+            var interpolationDelayTicks = _remoteInterpolationEnabled
+                ? BufferedInterpolationDelayTicks
                 : 0;
+            var desiredTargetTick = latestTick > interpolationDelayTicks
+                ? latestTick - interpolationDelayTicks
+                : 0;
+            if (!_remoteInterpolationEnabled)
+            {
+                _remoteRenderTicks[pair.Key] = desiredTargetTick;
+            }
+
             if (!_remoteRenderTicks.TryGetValue(pair.Key, out var targetTick) ||
                 targetTick > desiredTargetTick ||
                 desiredTargetTick - targetTick > MaximumInterpolationClockDriftTicks)
@@ -531,10 +549,24 @@ public partial class NetworkArena : Node3D
               "Escape releases the mouse; click the game to resume control (Alt+Tab is the fallback)"
             : _authorityAvailable
                 ? $"CLIENT PREDICTION  |  tick {_simulationTick}  |  speed {horizontalSpeed:0.0} m/s  |  unacked {_predictionHistory.Count}  |  last correction {_lastCorrectionDistance:0.000} m\n" +
-                  $"REMOTE VIEW  |  fps {Engine.GetFramesPerSecond()}  |  authority tick {_latestAuthoritySnapshotTick}  |  snapshot age {snapshotAgeMilliseconds:0} ms  |  render lag {interpolationLagMilliseconds:0} ms\n" +
+                  $"REMOTE VIEW  |  {(_remoteInterpolationEnabled ? "33 ms BUFFER" : "RAW LATEST SNAPSHOT")}  |  F9 toggles  |  fps {Engine.GetFramesPerSecond()}  |  authority tick {_latestAuthoritySnapshotTick}  |  snapshot age {snapshotAgeMilliseconds:0} ms  |  render lag {interpolationLagMilliseconds:0} ms\n" +
                   "MOVEMENT TEST ONLY — attacks and combat are not networked yet\n" +
                   "Escape releases the mouse; click the game to resume control (Alt+Tab is the fallback)"
                 : "CONNECTION INTERRUPTED  |  waiting for authority reconnection";
+    }
+
+    private static void EnsureDebugInputBinding()
+    {
+        if (!InputMap.HasAction(ToggleRemoteInterpolationAction))
+        {
+            InputMap.AddAction(ToggleRemoteInterpolationAction);
+        }
+
+        var key = new InputEventKey { PhysicalKeycode = Key.F9 };
+        if (!InputMap.ActionHasEvent(ToggleRemoteInterpolationAction, key))
+        {
+            InputMap.ActionAddEvent(ToggleRemoteInterpolationAction, key);
+        }
     }
 
     private static CombatantSnapshot ToSnapshot(NetworkAvatar avatar, ulong processedInput) => new()
