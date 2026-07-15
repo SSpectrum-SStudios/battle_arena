@@ -14,6 +14,8 @@ The script exports to `build\steam\windows`, ensures `steam_api64.dll` is presen
 
 The Godot executable can be overridden with `-GodotExecutable` or the `GODOT_MONO_CONSOLE` environment variable. The export preset defaults to the tracked `Steam Windows` release preset and can be overridden with `-Preset`.
 
+The Steam-enabled native template and its managed `GodotSharp.dll` must come from the same custom Godot build. `NuGet.Config` includes the custom packages generated under `D:\Godot_Building_Src\godot\MyLocalNugetSource`. The export script clears only its workspace-local cached Godot packages, restores those custom packages, and verifies that the resolved assembly contains the native Steam wrapper before allowing an export. This prevents a Steam-enabled executable from being paired with the official GodotSharp package, which cannot bind the custom `Steam` class at runtime.
+
 ## Upload to SteamPipe
 
 ```powershell

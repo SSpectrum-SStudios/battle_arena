@@ -32,10 +32,33 @@ $env:APPDATA = Join-Path $ProjectRoot ".appdata"
 $env:LOCALAPPDATA = Join-Path $ProjectRoot ".localappdata"
 $env:NUGET_PACKAGES = Join-Path $ProjectRoot ".nuget\packages"
 $env:NuGetAudit = "false"
+$godotBuildRoot = Split-Path -Parent (Split-Path -Parent $GodotExecutable)
+$customGodotPackages = Join-Path $godotBuildRoot "MyLocalNugetSource"
+if (-not (Test-Path -LiteralPath $customGodotPackages -PathType Container)) {
+    throw "Custom Godot NuGet packages were not found at '$customGodotPackages'. Build the GodotSharp packages for the custom Steam-enabled Godot build before exporting."
+}
+
+# The official GodotSharp package has the same version as this custom package.
+# Remove only Godot's workspace-local cached packages so NuGet cannot silently
+# reuse the official assembly, which lacks the custom Steam native wrappers.
+$godotPackageNames = @("godot.net.sdk", "godotsharp", "godotsharpeditor", "godot.sourcegenerators")
+foreach ($packageName in $godotPackageNames) {
+    $packagePath = Join-Path $env:NUGET_PACKAGES $packageName
+    if (Test-Path -LiteralPath $packagePath) {
+        Remove-Item -LiteralPath $packagePath -Recurse -Force
+    }
+}
+
 $projectFile = Join-Path $ProjectRoot "Battle Arena.csproj"
-& dotnet restore $projectFile -r win-x64 -p:NuGetAudit=false --ignore-failed-sources
+& dotnet restore $projectFile -r win-x64 -p:NuGetAudit=false --ignore-failed-sources --force-evaluate
 if ($LASTEXITCODE -ne 0) {
     throw "The .NET restore required for the Windows export failed with exit code $LASTEXITCODE."
+}
+
+$resolvedGodotSharp = Join-Path $env:NUGET_PACKAGES "godotsharp\4.4.0\lib\net8.0\GodotSharp.dll"
+if (-not (Test-Path -LiteralPath $resolvedGodotSharp -PathType Leaf) -or
+    -not [Text.Encoding]::ASCII.GetString([IO.File]::ReadAllBytes($resolvedGodotSharp)).Contains("SteamInstance")) {
+    throw "The resolved GodotSharp package does not contain the custom Steam wrapper. Refusing to export an incompatible native/managed build."
 }
 
 $arguments = "--headless --path `"$ProjectRoot`" $exportMode `"$Preset`" `"$OutputExecutable`""
