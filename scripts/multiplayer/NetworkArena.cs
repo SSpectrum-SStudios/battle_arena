@@ -14,7 +14,8 @@ public partial class NetworkArena : Node3D
 {
     private const ulong HostCombatantId = 1;
     private const float FixedDelta = 1f / 60f;
-    private const ulong InterpolationDelayTicks = 6;
+    private const ulong InterpolationDelayTicks = 2;
+    private const double MaximumInterpolationClockDriftTicks = 2.0;
     private const int RedundantInputFrameCount = 3;
     private const int MaximumPredictionHistory = 256;
 
@@ -55,6 +56,9 @@ public partial class NetworkArena : Node3D
     private bool _authorityAvailable = true;
     private long _acceptedInputPackets;
     private long _acceptedSnapshots;
+    private ulong _latestAuthoritySnapshotTick;
+    private ulong _lastSnapshotArrivalMicroseconds;
+    private double _remoteInterpolationLagTicks;
 
     public void InitializeAuthority(
         GodotEnetTransport transport,
@@ -416,6 +420,8 @@ public partial class NetworkArena : Node3D
             }
         }
 
+        _latestAuthoritySnapshotTick = decoded.Envelope.SimulationTick;
+        _lastSnapshotArrivalMicroseconds = Time.GetTicksUsec();
         _acceptedSnapshots++;
     }
 
@@ -454,6 +460,7 @@ public partial class NetworkArena : Node3D
 
     private void InterpolateRemoteAvatars(double delta)
     {
+        _remoteInterpolationLagTicks = 0;
         foreach (var pair in _remoteSnapshots)
         {
             if (!_avatars.TryGetValue(pair.Key, out var avatar) || pair.Value.Count == 0)
@@ -467,7 +474,8 @@ public partial class NetworkArena : Node3D
                 ? latestTick - InterpolationDelayTicks
                 : 0;
             if (!_remoteRenderTicks.TryGetValue(pair.Key, out var targetTick) ||
-                targetTick > desiredTargetTick)
+                targetTick > desiredTargetTick ||
+                desiredTargetTick - targetTick > MaximumInterpolationClockDriftTicks)
             {
                 targetTick = desiredTargetTick;
             }
@@ -479,6 +487,9 @@ public partial class NetworkArena : Node3D
             }
 
             _remoteRenderTicks[pair.Key] = targetTick;
+            _remoteInterpolationLagTicks = Math.Max(
+                _remoteInterpolationLagTicks,
+                latestTick - targetTick);
             var before = samples[0];
             var after = samples[^1];
             foreach (var sample in samples)
@@ -510,12 +521,17 @@ public partial class NetworkArena : Node3D
     private void UpdateStatus()
     {
         var horizontalSpeed = new Vector2(_localAvatar.Velocity.X, _localAvatar.Velocity.Z).Length();
+        var snapshotAgeMilliseconds = _lastSnapshotArrivalMicroseconds == 0
+            ? 0.0
+            : (Time.GetTicksUsec() - _lastSnapshotArrivalMicroseconds) / 1000.0;
+        var interpolationLagMilliseconds = _remoteInterpolationLagTicks * (1000.0 / 60.0);
         _statusLabel.Text = _mode == ArenaMode.Authority
             ? $"HOST AUTHORITY  |  tick {_simulationTick}  |  speed {horizontalSpeed:0.0} m/s  |  snapshots 30 Hz  |  players {_avatars.Count}\n" +
               "MOVEMENT TEST ONLY — attacks and combat are not networked yet\n" +
               "Escape releases the mouse; click the game to resume control (Alt+Tab is the fallback)"
             : _authorityAvailable
                 ? $"CLIENT PREDICTION  |  tick {_simulationTick}  |  speed {horizontalSpeed:0.0} m/s  |  unacked {_predictionHistory.Count}  |  last correction {_lastCorrectionDistance:0.000} m\n" +
+                  $"REMOTE VIEW  |  fps {Engine.GetFramesPerSecond()}  |  authority tick {_latestAuthoritySnapshotTick}  |  snapshot age {snapshotAgeMilliseconds:0} ms  |  render lag {interpolationLagMilliseconds:0} ms\n" +
                   "MOVEMENT TEST ONLY — attacks and combat are not networked yet\n" +
                   "Escape releases the mouse; click the game to resume control (Alt+Tab is the fallback)"
                 : "CONNECTION INTERRUPTED  |  waiting for authority reconnection";
