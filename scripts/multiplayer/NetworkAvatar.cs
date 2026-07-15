@@ -7,6 +7,12 @@ namespace BattleArena.GodotNetworking;
 
 public partial class NetworkAvatar : CharacterBody3D
 {
+    private const float VerticalCorrectionHalfLifeSeconds = 0.06f;
+    private const float VerticalCorrectionDeadzoneMeters = 0.005f;
+    private const float MaximumVerticalPresentationOffsetMeters = 0.35f;
+    private const float VerticalCorrectionSnapDistanceMeters = 1.0f;
+    private const float VerticalCorrectionFinishedMeters = 0.001f;
+
     [Export]
     public NodePath CameraPitchPath { get; set; } = "";
 
@@ -35,6 +41,7 @@ public partial class NetworkAvatar : CharacterBody3D
     private MeshInstance3D _bodyMesh = null!;
     private MeshInstance3D _headMesh = null!;
     private Label3D _label = null!;
+    private Node3D _visualRoot = null!;
     private bool _configured;
     private bool _locallyControlled;
     private bool _collisionEnabled;
@@ -44,6 +51,10 @@ public partial class NetworkAvatar : CharacterBody3D
     private float _pitch;
     private Color _color;
     private string _displayLabel = "Player";
+    private Vector3 _visualRootBasePosition;
+    private Vector3 _cameraPitchBasePosition;
+    private Vector3 _labelBasePosition;
+    private float _verticalPresentationOffset;
 
     public ulong CombatantId { get; private set; }
 
@@ -87,6 +98,10 @@ public partial class NetworkAvatar : CharacterBody3D
         _bodyMesh = GetNode<MeshInstance3D>(BodyMeshPath);
         _headMesh = GetNode<MeshInstance3D>(HeadMeshPath);
         _label = GetNode<Label3D>(LabelPath);
+        _visualRoot = _bodyMesh.GetParent<Node3D>();
+        _visualRootBasePosition = _visualRoot.Position;
+        _cameraPitchBasePosition = _cameraPitch.Position;
+        _labelBasePosition = _label.Position;
 
         _collision.Disabled = !_collisionEnabled;
         PhysicsInterpolationMode = _locallyControlled
@@ -107,6 +122,23 @@ public partial class NetworkAvatar : CharacterBody3D
             Input.MouseMode = Input.MouseModeEnum.Captured;
             _gameplayInputEnabled = true;
         }
+    }
+
+    public override void _Process(double delta)
+    {
+        if (!_locallyControlled || Mathf.IsZeroApprox(_verticalPresentationOffset))
+        {
+            return;
+        }
+
+        var remaining = Mathf.Pow(0.5f, (float)delta / VerticalCorrectionHalfLifeSeconds);
+        _verticalPresentationOffset *= remaining;
+        if (Mathf.Abs(_verticalPresentationOffset) <= VerticalCorrectionFinishedMeters)
+        {
+            _verticalPresentationOffset = 0;
+        }
+
+        ApplyVerticalPresentationOffset();
     }
 
     public override void _Notification(int what)
@@ -217,6 +249,22 @@ public partial class NetworkAvatar : CharacterBody3D
         SetPitch(pitch);
     }
 
+    public void ApplyVerticalPresentationCorrection(float correctionMeters)
+    {
+        if (!_locallyControlled || Mathf.Abs(correctionMeters) <= VerticalCorrectionDeadzoneMeters)
+        {
+            return;
+        }
+
+        _verticalPresentationOffset = Mathf.Abs(correctionMeters) >= VerticalCorrectionSnapDistanceMeters
+            ? 0
+            : Mathf.Clamp(
+                correctionMeters,
+                -MaximumVerticalPresentationOffsetMeters,
+                MaximumVerticalPresentationOffsetMeters);
+        ApplyVerticalPresentationOffset();
+    }
+
     public void SetPitch(float pitch)
     {
         _pitch = Mathf.Clamp(pitch, Mathf.DegToRad(-75f), Mathf.DegToRad(70f));
@@ -246,6 +294,14 @@ public partial class NetworkAvatar : CharacterBody3D
     {
         _gameplayInputEnabled = false;
         Input.MouseMode = Input.MouseModeEnum.Visible;
+    }
+
+    private void ApplyVerticalPresentationOffset()
+    {
+        var offset = Vector3.Up * _verticalPresentationOffset;
+        _visualRoot.Position = _visualRootBasePosition + offset;
+        _cameraPitch.Position = _cameraPitchBasePosition + offset;
+        _label.Position = _labelBasePosition + offset;
     }
 
     private void ApplyCameraMode()
