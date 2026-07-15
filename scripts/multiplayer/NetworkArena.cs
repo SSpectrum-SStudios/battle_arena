@@ -41,7 +41,7 @@ public partial class NetworkArena : Node3D
     private readonly NetworkMovementMotor _movementMotor = new();
     private readonly ProtobufProtocolCodec _codec = new();
     private readonly InboundMessageValidator _validator = new();
-    private GodotEnetTransport _transport = null!;
+    private INetworkTransport _transport = null!;
     private AuthorityConnectionService? _authorityService;
     private ClientConnectionService? _clientService;
     private Node3D _avatarsRoot = null!;
@@ -65,7 +65,7 @@ public partial class NetworkArena : Node3D
     private bool _remoteInterpolationEnabled = true;
 
     public void InitializeAuthority(
-        GodotEnetTransport transport,
+        INetworkTransport transport,
         AuthorityConnectionService authorityService,
         ulong authorityStartTick)
     {
@@ -78,7 +78,7 @@ public partial class NetworkArena : Node3D
     }
 
     public void InitializeClient(
-        GodotEnetTransport transport,
+        INetworkTransport transport,
         ClientConnectionService clientService,
         ulong authorityStartTick)
     {

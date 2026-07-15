@@ -1,7 +1,9 @@
-[gd_scene load_steps=4 format=3]
+[gd_scene load_steps=6 format=3]
 
 [ext_resource type="Script" path="res://scripts/multiplayer/NetworkLauncher.cs" id="1_launcher"]
 [ext_resource type="Script" path="res://scripts/multiplayer/GodotEnetTransport.cs" id="2_transport"]
+[ext_resource type="Script" path="res://scripts/multiplayer/GodotSteamSocketsTransport.cs" id="3_steam_transport"]
+[ext_resource type="Script" path="res://scripts/multiplayer/SteamRuntimeAdapter.cs" id="4_steam_runtime"]
 
 [sub_resource type="StyleBoxFlat" id="StyleBox_panel"]
 bg_color = Color(0.035, 0.05, 0.08, 0.94)
@@ -22,6 +24,12 @@ script = ExtResource("1_launcher")
 
 [node name="EnetTransport" type="Node" parent="."]
 script = ExtResource("2_transport")
+
+[node name="SteamTransport" type="Node" parent="."]
+script = ExtResource("3_steam_transport")
+
+[node name="SteamRuntime" type="Node" parent="."]
+script = ExtResource("4_steam_runtime")
 
 [node name="ArenaRoot" type="Node3D" parent="."]
 
@@ -69,7 +77,7 @@ horizontal_alignment = 1
 [node name="Subtitle" type="Label" parent="Center/Panel/Margin/Layout"]
 layout_mode = 2
 theme_override_colors/font_color = Color(0.72, 0.82, 0.95, 1)
-text = "Host or join another instance over ENet. Steam is not required."
+text = "Play offline, over LAN/IP, or through a Steam friends lobby."
 horizontal_alignment = 1
 
 [node name="NameLabel" type="Label" parent="Center/Panel/Margin/Layout"]
@@ -113,11 +121,37 @@ text = "Offline Test"
 
 [node name="Host" type="Button" parent="Center/Panel/Margin/Layout/Buttons"]
 layout_mode = 2
-text = "Host Game"
+text = "Host IP"
 
 [node name="Join" type="Button" parent="Center/Panel/Margin/Layout/Buttons"]
 layout_mode = 2
-text = "Join Game"
+text = "Join IP"
+
+[node name="SteamLobbyLabel" type="Label" parent="Center/Panel/Margin/Layout"]
+layout_mode = 2
+text = "Steam lobby ID (paste to join)"
+
+[node name="SteamLobbyId" type="LineEdit" parent="Center/Panel/Margin/Layout"]
+layout_mode = 2
+placeholder_text = "Created automatically when hosting"
+
+[node name="SteamButtons" type="HBoxContainer" parent="Center/Panel/Margin/Layout"]
+layout_mode = 2
+theme_override_constants/separation = 10
+alignment = 1
+
+[node name="SteamHost" type="Button" parent="Center/Panel/Margin/Layout/SteamButtons"]
+layout_mode = 2
+text = "Host Steam"
+
+[node name="SteamJoin" type="Button" parent="Center/Panel/Margin/Layout/SteamButtons"]
+layout_mode = 2
+text = "Join Steam"
+
+[node name="Invite" type="Button" parent="Center/Panel/Margin/Layout/SteamButtons"]
+layout_mode = 2
+disabled = true
+text = "Invite Friends"
 
 [node name="StartMatch" type="Button" parent="Center/Panel/Margin/Layout"]
 layout_mode = 2
