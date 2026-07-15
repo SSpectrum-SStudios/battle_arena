@@ -25,33 +25,77 @@ if (-not (Test-Path -LiteralPath (Join-Path $ProjectRoot "export_presets.cfg") -
 New-Item -ItemType Directory -Force -Path $OutputDirectory | Out-Null
 $exportMode = if ($Release) { "--export-release" } else { "--export-debug" }
 Remove-Item -LiteralPath $OutputExecutable -Force -ErrorAction SilentlyContinue
+# Steam exports must also work in an offline/restricted build environment. Refresh
+# the runtime-specific assets without auditing; ordinary development restores can
+# still perform their normal vulnerability audit.
+$env:APPDATA = Join-Path $ProjectRoot ".appdata"
+$env:LOCALAPPDATA = Join-Path $ProjectRoot ".localappdata"
+$env:NUGET_PACKAGES = Join-Path $ProjectRoot ".nuget\packages"
+$env:NuGetAudit = "false"
+$projectFile = Join-Path $ProjectRoot "Battle Arena.csproj"
+& dotnet restore $projectFile -r win-x64 -p:NuGetAudit=false --ignore-failed-sources
+if ($LASTEXITCODE -ne 0) {
+    throw "The .NET restore required for the Windows export failed with exit code $LASTEXITCODE."
+}
 
 $arguments = "--headless --path `"$ProjectRoot`" $exportMode `"$Preset`" `"$OutputExecutable`""
 $processInfo = [System.Diagnostics.ProcessStartInfo]::new($GodotExecutable, $arguments)
 $processInfo.UseShellExecute = $false
 $processInfo.CreateNoWindow = $true
+$processInfo.RedirectStandardOutput = $true
+$processInfo.RedirectStandardError = $true
 $godotProcess = [System.Diagnostics.Process]::Start($processInfo)
 $deadline = [DateTime]::UtcNow.AddMinutes(5)
-$lastLength = -1L
-$stableSince = [DateTime]::UtcNow
+$completedSuccessfully = $false
+$exportFailed = $false
+$outputRead = $godotProcess.StandardOutput.ReadLineAsync()
+$errorRead = $godotProcess.StandardError.ReadLineAsync()
 
 while (-not $godotProcess.HasExited -and [DateTime]::UtcNow -lt $deadline) {
-    Start-Sleep -Milliseconds 500
-    if (Test-Path -LiteralPath $OutputExecutable -PathType Leaf) {
-        $length = (Get-Item -LiteralPath $OutputExecutable).Length
-        if ($length -ne $lastLength) {
-            $lastLength = $length
-            $stableSince = [DateTime]::UtcNow
+    if ($null -ne $outputRead -and $outputRead.IsCompleted) {
+        $line = $outputRead.GetAwaiter().GetResult()
+        if ($null -eq $line) {
+            $outputRead = $null
         }
-        elseif ($length -gt 0 -and ([DateTime]::UtcNow - $stableSince).TotalSeconds -ge 10) {
-            # This custom Godot build sometimes completes the file and then hangs
-            # while tearing down editor resources. The stable output is complete.
+        else {
+            Write-Host $line
+            if ($line -match 'Export \.NET Project: Failed|Failed to build project') {
+                $exportFailed = $true
+            }
+            if ($line -match '^savepack: end') {
+                $completedSuccessfully = $true
+            }
+            $outputRead = $godotProcess.StandardOutput.ReadLineAsync()
+        }
+    }
+
+    if ($null -ne $errorRead -and $errorRead.IsCompleted) {
+        $line = $errorRead.GetAwaiter().GetResult()
+        if ($null -eq $line) {
+            $errorRead = $null
+        }
+        else {
+            Write-Warning $line
+            if ($line -match 'Export \.NET Project: Failed|Failed to build project') {
+                $exportFailed = $true
+            }
+            $errorRead = $godotProcess.StandardError.ReadLineAsync()
+        }
+    }
+
+    if ($completedSuccessfully) {
+        Start-Sleep -Seconds 2
+        if (-not $godotProcess.HasExited) {
+            # This custom Godot editor sometimes hangs while tearing down resources
+            # after savepack has explicitly completed.
             $godotProcess.Kill()
             $godotProcess.WaitForExit()
             Write-Warning "Godot export completed, but the editor was stopped after its known shutdown hang."
-            break
         }
+        break
     }
+
+    Start-Sleep -Milliseconds 50
 }
 
 if (-not $godotProcess.HasExited) {
@@ -61,6 +105,15 @@ if (-not $godotProcess.HasExited) {
 
 if (-not (Test-Path -LiteralPath $OutputExecutable -PathType Leaf)) {
     throw "Godot Windows export failed with exit code $($godotProcess.ExitCode)."
+}
+
+if (-not $completedSuccessfully -and $godotProcess.ExitCode -ne 0) {
+    throw "Godot Windows export failed with exit code $($godotProcess.ExitCode)."
+}
+
+if ($exportFailed) {
+    Remove-Item -LiteralPath $OutputExecutable -Force -ErrorAction SilentlyContinue
+    throw "Godot Windows export failed during .NET publishing."
 }
 
 $SteamApiSource = Join-Path (Split-Path -Parent $GodotExecutable) "steam_api64.dll"

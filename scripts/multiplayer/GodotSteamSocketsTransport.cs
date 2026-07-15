@@ -36,9 +36,7 @@ public partial class GodotSteamSocketsTransport : Node, INetworkTransport
             return Error.CantCreate;
         }
 
-        _listenSocket = Steam.CreateListenSocketP2P(
-            SteamApplicationConfiguration.VirtualPort,
-            new Godot.Collections.Array());
+        _listenSocket = CreateListenSocketP2P(SteamApplicationConfiguration.VirtualPort);
         if (_listenSocket == InvalidHandle)
         {
             Stop();
@@ -67,10 +65,7 @@ public partial class GodotSteamSocketsTransport : Node, INetworkTransport
             return Error.CantCreate;
         }
 
-        var connection = Steam.ConnectP2P(
-            hostSteamId,
-            SteamApplicationConfiguration.VirtualPort,
-            new Godot.Collections.Array());
+        var connection = ConnectP2P(hostSteamId, SteamApplicationConfiguration.VirtualPort);
         if (connection == InvalidHandle || !Steam.SetConnectionPollGroup(connection, _pollGroup))
         {
             Stop();
@@ -184,6 +179,16 @@ public partial class GodotSteamSocketsTransport : Node, INetworkTransport
             _subscribed = true;
         }
     }
+
+    private static uint CreateListenSocketP2P(int virtualPort) =>
+        Steam.GetInstance()
+            .Call(Methods.CreateListenSocketP2P, virtualPort, new Godot.Collections.Dictionary())
+            .As<uint>();
+
+    private static uint ConnectP2P(ulong hostSteamId, int virtualPort) =>
+        Steam.GetInstance()
+            .Call(Methods.ConnectP2P, hostSteamId, virtualPort, new Godot.Collections.Dictionary())
+            .As<uint>();
 
     private void OnConnectionStatusChanged(long connectionHandle, Godot.Collections.Dictionary details, long oldState)
     {
