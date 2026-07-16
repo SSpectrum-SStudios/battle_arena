@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "sources": [
+    {
+      "id": "kaykit-adventurers-1.0",
+      "displayName": "KayKit Character Pack: Adventurers 1.0",
+      "version": "1.0+672074b73ba276876a19e8816ecdc5241817ab47",
+      "sourcePage": "https://github.com/KayKit-Game-Assets/KayKit-Character-Pack-Adventures-1.0",
+      "downloadUrl": "https://github.com/KayKit-Game-Assets/KayKit-Character-Pack-Adventures-1.0/archive/672074b73ba276876a19e8816ecdc5241817ab47.zip",
+      "archiveFileName": "kaykit-adventurers-1.0-672074b73ba276876a19e8816ecdc5241817ab47.zip",
+      "sha256": "00777A7B9811A7C7F8DD3FDA4E56604F6A93B33673D64557153F354D677B47AF",
+      "archiveRoot": "KayKit-Character-Pack-Adventures-1.0-672074b73ba276876a19e8816ecdc5241817ab47",
+      "license": "CC0-1.0"
+    }
+  ]
+}

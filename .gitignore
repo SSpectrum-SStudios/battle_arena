@@ -24,6 +24,10 @@ mono_crash.*.json
 # Generated exports and SteamPipe build output
 build/
 
+# Downloaded third-party source packs. Promote only selected, licensed assets
+# into tracked game directories.
+asset_staging/
+
 # Local secrets and generated SteamPipe scripts
 .env
 .env.*
