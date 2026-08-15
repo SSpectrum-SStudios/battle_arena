@@ -2,6 +2,7 @@
 
 using BattleArena.Multiplayer.Connection;
 using BattleArena.Multiplayer.Protocol;
+using BattleArena.Multiplayer.Prediction;
 using BattleArena.Multiplayer.Transport;
 using BattleArena.Protocol.V1;
 using Godot;
@@ -14,7 +15,9 @@ public partial class NetworkLauncher : Control
     private const int DefaultPort = 7777;
 
     private GodotEnetTransport _enetTransport = null!;
+    private GodotEnetPredictionMeshTransport _enetPredictionTransport = null!;
     private GodotSteamSocketsTransport _steamTransport = null!;
+    private GodotSteamPredictionMeshTransport _steamPredictionTransport = null!;
     private SteamRuntimeAdapter _steamRuntime = null!;
     private SteamLobbyService? _steamLobby;
     private INetworkTransport? _activeTransport;
@@ -35,16 +38,25 @@ public partial class NetworkLauncher : Control
     private Node3D _arenaRoot = null!;
     private AuthorityConnectionService? _authorityService;
     private ClientConnectionService? _clientService;
+    private AuthorityPredictionControlService? _authorityPredictionControl;
+    private ClientPredictionControlService? _clientPredictionControl;
     private string _requestedDisplayName = "Player";
     private bool _joinRequestSent;
     private bool _quitAfterConnected;
     private bool _autoStart;
+    private int _autoStartRemotePlayerCount = 1;
     private NetworkArena? _arena;
+    private int _predictionPort;
+    private bool _forcePredictionFailureOnce;
+    private bool _forcePredictionStartupFailure;
+    private ulong _predictionTick = 1;
 
     public override void _Ready()
     {
         _enetTransport = GetNode<GodotEnetTransport>("EnetTransport");
+        _enetPredictionTransport = GetNode<GodotEnetPredictionMeshTransport>("EnetPredictionTransport");
         _steamTransport = GetNode<GodotSteamSocketsTransport>("SteamTransport");
+        _steamPredictionTransport = GetNode<GodotSteamPredictionMeshTransport>("SteamPredictionTransport");
         _steamRuntime = GetNode<SteamRuntimeAdapter>("SteamRuntime");
         _displayName = GetNode<LineEdit>("Center/Panel/Margin/Layout/DisplayName");
         _address = GetNode<LineEdit>("Center/Panel/Margin/Layout/Address");
@@ -70,7 +82,9 @@ public partial class NetworkLauncher : Control
         _inviteButton.Pressed += () => _steamLobby?.OpenInviteOverlay();
         _startButton.Pressed += StartHostedMatch;
         _enetTransport.StatusChanged += SetStatus;
+        _enetPredictionTransport.StatusChanged += SetStatus;
         _steamTransport.StatusChanged += SetStatus;
+        _steamPredictionTransport.StatusChanged += SetStatus;
         _steamRuntime.StatusChanged += SetStatus;
 
         _port.Value = DefaultPort;
@@ -88,7 +102,9 @@ public partial class NetworkLauncher : Control
         _steamLobby?.Dispose();
         _steamLobby = null;
         _enetTransport.StatusChanged -= SetStatus;
+        _enetPredictionTransport.StatusChanged -= SetStatus;
         _steamTransport.StatusChanged -= SetStatus;
+        _steamPredictionTransport.StatusChanged -= SetStatus;
         _steamRuntime.StatusChanged -= SetStatus;
     }
 
@@ -130,8 +146,21 @@ public partial class NetworkLauncher : Control
             return;
         }
 
+        var predictionAddress = ResolvePredictionAdvertisedAddress(address);
+        _enetPredictionTransport.ForceNextConnectedRouteFailure = _forcePredictionFailureOnce;
+        var predictionAvailable = !_forcePredictionStartupFailure &&
+            _enetPredictionTransport.Start(
+                "0.0.0.0", predictionAddress, _predictionPort) == Error.Ok;
         SetActiveTransport(_enetTransport);
         CreateClientService();
+        if (predictionAvailable)
+        {
+            CreateClientPredictionControl(_enetPredictionTransport);
+        }
+        else
+        {
+            GD.Print("[PredictionMesh] Prediction transport unavailable; authority relay only.");
+        }
         if (_enetTransport.Join(address, port) != Error.Ok)
         {
             ResetServices();
@@ -218,6 +247,17 @@ public partial class NetworkLauncher : Control
     {
         SetActiveTransport(_steamTransport);
         CreateClientService();
+        _steamPredictionTransport.MayAcceptSteamPeer = _steamLobby!.IsMember;
+        if (!_forcePredictionStartupFailure && _steamPredictionTransport.Start(
+                _steamRuntime.LocalSteamId,
+                SteamApplicationConfiguration.PredictionVirtualPort) == Error.Ok)
+        {
+            CreateClientPredictionControl(_steamPredictionTransport);
+        }
+        else
+        {
+            GD.Print("[PredictionMesh] Prediction transport unavailable; authority relay only.");
+        }
         if (_steamTransport.Join(ownerSteamId) != Error.Ok)
         {
             ResetServices();
@@ -234,6 +274,29 @@ public partial class NetworkLauncher : Control
             new CryptographicSessionCredentialGenerator(), new AuthoritySessionConfiguration(60, 30, 60));
         _authorityService.PlayerJoined += OnPlayerJoined;
         _authorityService.ProtocolViolationDetected += OnAuthorityProtocolViolation;
+        var authorityPeer = new SessionPeer(
+            new SessionPeerId(1),
+            ConnectionGeneration.Initial,
+            1,
+            1,
+            "Host",
+            isAuthority: true);
+        _authorityPredictionControl = new AuthorityPredictionControlService(
+            _activeTransport!,
+            new ProtobufProtocolCodec(),
+            new InboundMessageValidator(),
+            _authorityService,
+            new AuthorityPredictionRouteBroker(
+                new CryptographicPredictionCredentialGenerator(),
+                authorityPeer,
+                credentialLifetimeTicks: 3_600),
+            _activeTransport!.Kind == TransportKind.Steam
+                ? new SteamPredictionRouteAdvertisementVerifier(
+                    _steamTransport,
+                    steamId => _steamLobby?.IsMember(steamId) == true)
+                : new TransportKindPredictionRouteAdvertisementVerifier(
+                    PredictionTransportKind.Enet));
+        _authorityPredictionControl.ProtocolViolationDetected += OnAuthorityProtocolViolation;
     }
 
     private void CreateClientService()
@@ -247,17 +310,45 @@ public partial class NetworkLauncher : Control
         _clientService.AuthorityTransportDisconnected += () => SetStatus("The host transport disconnected.");
     }
 
+    private void CreateClientPredictionControl(IPredictionMeshTransport meshTransport)
+    {
+        _clientPredictionControl = new ClientPredictionControlService(
+            _activeTransport!,
+            new ProtobufProtocolCodec(),
+            new InboundMessageValidator(),
+            _clientService!,
+            meshTransport,
+            new PredictionHandshakeSessionFactory(
+                new HmacPredictionHandshakeAuthenticator(),
+                new CryptographicPredictionCredentialGenerator(),
+                new PredictionInboundMessageValidator()),
+            new ProtobufPredictionProtocolCodec(),
+            new GodotNetworkTimeSource());
+        _clientPredictionControl.ProtocolViolationDetected += violation =>
+            SetStatus($"Prediction protocol error: {violation.Message}");
+        _clientPredictionControl.RouteStatusChanged += status =>
+            GD.Print($"[PredictionMesh] peer {status.Route.RemotePeerId.Value}: {status.Health}, " +
+                     $"attempt {status.AttemptId}");
+    }
+
+    public override void _PhysicsProcess(double delta)
+    {
+        _authorityPredictionControl?.AdvanceAuthorityTick(_predictionTick);
+        _clientPredictionControl?.Advance(_predictionTick, _predictionTick);
+        _predictionTick++;
+    }
+
     private void SetActiveTransport(INetworkTransport? transport)
     {
         if (_activeTransport is not null)
         {
-            _activeTransport.PeerConnected -= OnTransportPeerConnected;
+            _activeTransport.ConnectionOpened -= OnTransportConnectionOpened;
         }
 
         _activeTransport = transport;
         if (_activeTransport is not null)
         {
-            _activeTransport.PeerConnected += OnTransportPeerConnected;
+            _activeTransport.ConnectionOpened += OnTransportConnectionOpened;
         }
     }
 
@@ -267,7 +358,7 @@ public partial class NetworkLauncher : Control
         return string.IsNullOrWhiteSpace(displayName) ? _steamRuntime.PersonaName : displayName;
     }
 
-    private void OnTransportPeerConnected(NetworkPeerId peerId)
+    private void OnTransportConnectionOpened(TransportConnectionId connectionId)
     {
         if (_clientService is null || _joinRequestSent)
         {
@@ -275,8 +366,8 @@ public partial class NetworkLauncher : Control
         }
 
         _joinRequestSent = true;
-        _clientService.BeginJoin(peerId, _requestedDisplayName);
-        SetStatus($"Transport connected to peer {peerId.Value}. Authenticating session...");
+        _clientService.BeginJoin(connectionId, _requestedDisplayName);
+        SetStatus($"Transport connection {connectionId.Value} opened. Authenticating session...");
     }
 
     private void OnPlayerJoined(ConnectedPlayer player)
@@ -284,7 +375,8 @@ public partial class NetworkLauncher : Control
         SetStatus($"{player.DisplayName} joined\nPlayer {player.PlayerId}, combatant {player.CombatantId}\n" +
                   $"Connected remote players: {_authorityService?.ConnectedPlayers.Count ?? 0}");
         _startButton.Disabled = false;
-        if (_autoStart)
+        if (_autoStart &&
+            _authorityService!.ConnectedPlayers.Count >= _autoStartRemotePlayerCount)
         {
             StartHostedMatch();
         }
@@ -329,7 +421,11 @@ public partial class NetworkLauncher : Control
     private void EnterArenaAsClient(ulong authorityStartTick)
     {
         var arena = GD.Load<PackedScene>("res://scenes/multiplayer/network_arena.tscn").Instantiate<NetworkArena>();
-        arena.InitializeClient(_activeTransport!, _clientService!, authorityStartTick);
+        arena.InitializeClient(
+            _activeTransport!,
+            _clientService!,
+            _clientPredictionControl,
+            authorityStartTick);
         EnterArena(arena);
     }
 
@@ -342,11 +438,15 @@ public partial class NetworkLauncher : Control
         GD.Print("[NetworkLauncher] Synchronized network arena started");
     }
 
-    private void OnAuthorityProtocolViolation(NetworkPeerId peerId, ProtocolViolation violation) =>
-        SetStatus($"Peer {peerId.Value} protocol error: {violation.Message}");
+    private void OnAuthorityProtocolViolation(TransportConnectionId connectionId, ProtocolViolation violation) =>
+        SetStatus($"Connection {connectionId.Value} protocol error: {violation.Message}");
 
     private void ResetServices()
     {
+        _authorityPredictionControl?.Dispose();
+        _authorityPredictionControl = null;
+        _clientPredictionControl?.Dispose();
+        _clientPredictionControl = null;
         if (_authorityService is not null)
         {
             _authorityService.PlayerJoined -= OnPlayerJoined;
@@ -361,10 +461,26 @@ public partial class NetworkLauncher : Control
         _startButton.Disabled = true;
         SetActiveTransport(null);
         _enetTransport.Stop();
+        _enetPredictionTransport.Stop();
+        _steamPredictionTransport.Stop();
         _steamTransport.Stop();
         _steamLobby?.Leave();
         _inviteButton.Disabled = true;
         SetConnectionControlsEnabled(true);
+    }
+
+    private static string ResolvePredictionAdvertisedAddress(string authorityAddress)
+    {
+        if (authorityAddress is "127.0.0.1" or "::1" or "localhost")
+        {
+            return "127.0.0.1";
+        }
+
+        return IP.GetLocalAddresses()
+            .FirstOrDefault(address =>
+                System.Net.IPAddress.TryParse(address, out var parsed) &&
+                parsed.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork &&
+                !System.Net.IPAddress.IsLoopback(parsed)) ?? "127.0.0.1";
     }
 
     private void SetConnectionControlsEnabled(bool enabled)
@@ -413,9 +529,23 @@ public partial class NetworkLauncher : Control
                 ulong.TryParse(arguments[++index], out steamLobbyId);
             else if (argument.StartsWith("--port=", StringComparison.Ordinal) &&
                      int.TryParse(argument["--port=".Length..], out var port)) _port.Value = port;
+            else if (argument.StartsWith("--prediction-port=", StringComparison.Ordinal) &&
+                     int.TryParse(argument["--prediction-port=".Length..], out var predictionPort) &&
+                     predictionPort is >= 0 and <= 65535) _predictionPort = predictionPort;
+            else if (argument == "--force-prediction-failure-once")
+                _forcePredictionFailureOnce = true;
+            else if (argument == "--force-prediction-startup-failure")
+                _forcePredictionStartupFailure = true;
             else if (argument.StartsWith("--name=", StringComparison.Ordinal)) _displayName.Text = argument["--name=".Length..];
             else if (argument == "--quit-after-connected") _quitAfterConnected = true;
             else if (argument == "--auto-start") _autoStart = true;
+            else if (argument.StartsWith("--auto-start-players=", StringComparison.Ordinal) &&
+                     int.TryParse(argument["--auto-start-players=".Length..], out var playerCount) &&
+                     playerCount is >= 1 and <= 7)
+            {
+                _autoStart = true;
+                _autoStartRemotePlayerCount = playerCount;
+            }
         }
 
         if (steamLobbyId != 0)

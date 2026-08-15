@@ -252,7 +252,12 @@ These are illustrative rather than confirmed content:
 
 The Fighter should establish the game's standard for movement, survivability, and close-range combat. The class should be easy to understand while retaining enough mechanical depth to reward mastery.
 
-The base Fighter should have a deliberately small combat kit. Much of a player's complexity, special abilities, and build identity should come from equipped items rather than an extensive set of innate class abilities. The likely baseline movement includes jumping, rolling, and fast ground movement. Whether sprinting is a separate action or simply the default movement speed remains undecided.
+The base Fighter should have a deliberately small combat kit. Much of a
+player's complexity, special abilities, and build identity should come from
+equipped items rather than an extensive set of innate class abilities. The
+baseline movement includes jumping, crouching, rolling, sprinting, and fast
+ground movement. Sprint is a separate hold input and the game has no universal
+stamina or mana resource.
 
 Advanced movement is an important part of the desired feel. Future items may add to or modify movement—for example additional jumps, altered rolls, aerial attacks, or new traversal abilities.
 
@@ -267,9 +272,15 @@ Details still to define include:
 
 ## Camera Direction
 
-The current prototype uses first-person perspective, but an over-the-shoulder third-person camera may better support advanced jumping, rolling, readable character animation, and visually expressive item effects. The intended third-person reference is a clear, accessible action-game presentation similar in broad camera feel to *Fortnite*, rather than a grounded simulation.
+The active production target is an over-the-shoulder third-person camera because
+it supports advanced jumping, rolling, readable character animation, and
+visually expressive item effects. The intended reference is a clear, accessible
+action-game presentation similar in broad camera feel to *Fortnite*, rather than
+a grounded simulation.
 
-Supporting both first- and third-person cameras—including live switching during play—is under consideration. This should not be committed to until testing answers whether the two perspectives provide comparable awareness, aiming, animation readability, and competitive fairness. Developing and polishing both perspectives would also increase the animation, camera, weapon-presentation, user-interface, and testing workload.
+First-person support, including possible live switching, is deferred. The
+architecture should not prevent it, but it is not part of the polished movement
+or multiplayer combat slice.
 
 ## Arena Direction
 
@@ -347,9 +358,6 @@ Presentation should prioritize:
 
 ### Combat
 
-15. Should the first production target be third-person only while first-person remains an experimental option?
-16. What are the Fighter's core actions?
-17. Should combat use stamina, cooldowns, animation commitment, or a combination of these?
 18. Within the target of less than one minute for most 1v1 rounds, what approximate time-to-kill should one uninterrupted fight have?
 19. Is friendly temporary cooperation acceptable, or should mechanics discourage teaming and hiding?
 
@@ -361,9 +369,10 @@ Presentation should prioritize:
 
 ### Technical Direction
 
-23. Should matches be peer-hosted, use a player-hosted dedicated server, or use official dedicated servers?
-24. Is controller support required for the first playable version?
-25. Which platforms are planned beyond Windows on Steam, if any?
+The current technical direction is a server-authoritative listen server with
+client-side prediction, Steam networking for online play, direct IP for local
+testing, remappable keyboard/mouse and controller input, Windows as the first
+shipping platform, and Linux as the next planned platform.
 
 ## Next Design Documents
 

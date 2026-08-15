@@ -1,0 +1,122 @@
+[gd_scene load_steps=8 format=3 uid="uid://c6shgg4uvwk7j"]
+
+[ext_resource type="Script" uid="uid://b13tmbtt37aeu" path="res://scripts/movement/MovementTestCourse.cs" id="1_course"]
+[ext_resource type="Script" uid="uid://ij0emuah6kjw" path="res://scripts/movement/MovementTestPlayer.cs" id="2_player"]
+[ext_resource type="PackedScene" path="res://scenes/presentation/knight_character_view.tscn" id="3_knight"]
+
+[sub_resource type="Environment" id="Environment_arena"]
+background_mode = 1
+background_color = Color(0.36, 0.62, 0.82, 1)
+ambient_light_source = 3
+ambient_light_color = Color(0.72, 0.82, 1, 1)
+ambient_light_energy = 0.65
+reflected_light_source = 2
+tonemap_mode = 2
+
+[sub_resource type="CapsuleShape3D" id="CapsuleShape_player"]
+radius = 0.42
+height = 1.8
+
+[sub_resource type="StyleBoxFlat" id="StyleBox_title"]
+bg_color = Color(0.84, 0.44, 0.28, 0.92)
+corner_radius_top_left = 8
+corner_radius_top_right = 8
+corner_radius_bottom_right = 8
+corner_radius_bottom_left = 8
+
+[sub_resource type="StyleBoxFlat" id="StyleBox_diagnostics"]
+bg_color = Color(0.025, 0.045, 0.075, 0.86)
+border_width_left = 2
+border_width_top = 2
+border_width_right = 2
+border_width_bottom = 2
+border_color = Color(0.35, 0.7, 0.83, 0.75)
+corner_radius_top_left = 8
+corner_radius_top_right = 8
+corner_radius_bottom_right = 8
+corner_radius_bottom_left = 8
+
+[node name="MovementTestArena" type="Node3D"]
+
+[node name="WorldEnvironment" type="WorldEnvironment" parent="."]
+environment = SubResource("Environment_arena")
+
+[node name="Sun" type="DirectionalLight3D" parent="."]
+transform = Transform3D(0.848048, 0.417582, -0.326251, 0, 0.615662, 0.788011, 0.529919, -0.668271, 0.522111, 0, 0, 0)
+light_color = Color(1, 0.91, 0.77, 1)
+light_energy = 1.25
+shadow_enabled = true
+directional_shadow_max_distance = 80.0
+
+[node name="Course" type="Node3D" parent="."]
+script = ExtResource("1_course")
+
+[node name="Player" type="CharacterBody3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.08, 24)
+floor_max_angle = 0.872665
+floor_snap_length = 0.45
+script = ExtResource("2_player")
+VisualRootPath = NodePath("VisualRoot")
+CharacterViewPath = NodePath("VisualRoot/KnightCharacterView")
+CameraYawPath = NodePath("CameraYaw")
+CameraPitchPath = NodePath("CameraYaw/CameraPitch")
+DiagnosticsPath = NodePath("../Hud/DiagnosticsPanel/Margin/Diagnostics")
+
+[node name="BodyCollision" type="CollisionShape3D" parent="Player"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.9, 0)
+shape = SubResource("CapsuleShape_player")
+
+[node name="VisualRoot" type="Node3D" parent="Player"]
+
+[node name="KnightCharacterView" parent="Player/VisualRoot" instance=ExtResource("3_knight")]
+
+[node name="CameraYaw" type="Node3D" parent="Player"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.45, 0)
+
+[node name="CameraPitch" type="Node3D" parent="Player/CameraYaw"]
+transform = Transform3D(1, 0, 0, 0, 0.978148, 0.207912, 0, -0.207912, 0.978148, 0, 0, 0)
+
+[node name="SpringArm" type="SpringArm3D" parent="Player/CameraYaw/CameraPitch"]
+spring_length = 5.2
+margin = 0.18
+
+[node name="Camera" type="Camera3D" parent="Player/CameraYaw/CameraPitch/SpringArm"]
+current = true
+fov = 72.0
+
+[node name="Hud" type="CanvasLayer" parent="."]
+
+[node name="Title" type="PanelContainer" parent="Hud"]
+offset_left = 18.0
+offset_top = 18.0
+offset_right = 342.0
+offset_bottom = 58.0
+theme_override_styles/panel = SubResource("StyleBox_title")
+
+[node name="Label" type="Label" parent="Hud/Title"]
+layout_mode = 2
+theme_override_colors/font_color = Color(1, 1, 1, 1)
+theme_override_font_sizes/font_size = 20
+text = "MOVEMENT TEST ARENA"
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="DiagnosticsPanel" type="PanelContainer" parent="Hud"]
+offset_left = 18.0
+offset_top = 70.0
+offset_right = 344.0
+offset_bottom = 360.0
+theme_override_styles/panel = SubResource("StyleBox_diagnostics")
+
+[node name="Margin" type="MarginContainer" parent="Hud/DiagnosticsPanel"]
+layout_mode = 2
+theme_override_constants/margin_left = 14
+theme_override_constants/margin_top = 12
+theme_override_constants/margin_right = 14
+theme_override_constants/margin_bottom = 12
+
+[node name="Diagnostics" type="Label" parent="Hud/DiagnosticsPanel/Margin"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.88, 0.95, 1, 1)
+theme_override_font_sizes/font_size = 15
+text = "Loading movement profile..."

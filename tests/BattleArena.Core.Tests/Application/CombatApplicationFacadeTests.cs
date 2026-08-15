@@ -13,6 +13,29 @@ public sealed class CombatApplicationFacadeTests
     private static readonly CombatantId TargetId = new(2);
 
     [Fact]
+    public void SimultaneousBatchPreservesMutualElimination()
+    {
+        var lethal = ImmediateAction("base:mutual_lethal", 100d);
+        var facade = Facade(lethal);
+        Register(facade, AttackerId, 100d);
+        Register(facade, TargetId, 100d);
+        var attackerExecution =
+            facade.BeginAction(AttackerId, lethal.Id).ExecutionId!.Value;
+        var targetExecution =
+            facade.BeginAction(TargetId, lethal.Id).ExecutionId!.Value;
+
+        var results = facade.RegisterHitsSimultaneously(
+        [
+            new SimultaneousHitRequest(attackerExecution, TargetId),
+            new SimultaneousHitRequest(targetExecution, AttackerId),
+        ]);
+
+        Assert.All(results, result => Assert.True(result.Accepted));
+        AssertHealth(facade, AttackerId, 0d, eliminated: true);
+        AssertHealth(facade, TargetId, 0d, eliminated: true);
+    }
+
+    [Fact]
     public void BasicSwordAcceptsOneHitAndRunsImmediateAndPeriodicDamage()
     {
         var action = SwordAction(physicalDamage: 15d, poisonDamage: 5d, poisonTicks: 2);

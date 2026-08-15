@@ -1,7 +1,7 @@
 # Battle Arena — Multiplayer Architecture Decisions
 
 Status: Discussion / living document
-Last updated: July 14, 2026
+Last updated: August 2, 2026
 
 ## Purpose
 
@@ -61,9 +61,43 @@ When authoritative state arrives, the owning client:
 3. Replays its remaining unacknowledged inputs.
 4. Smooths small visual corrections while immediately correcting material simulation errors.
 
-Remote characters are not predicted from guessed input. Clients render them by interpolating between authoritative snapshots received from the host.
+Remote characters use bounded prediction from complete movement commands and
+movement-state hints. The owning client sends one semantic movement bundle both
+to the authority and directly to every connected peer. Direct copies are
+untrusted presentation hints. The authority validates and relays a canonical
+accepted copy, then publishes authoritative movement state that reconciles every
+prediction. Remote prediction never authorizes collision outcomes, attacks,
+damage, effects, deaths, or other gameplay facts.
+
+Remote timing is adaptive per peer rather than a single fixed interpolation
+delay. It uses synchronized authority time, direct-route and authority-route
+latency, jitter, loss, packet age, and recent correction quality. The detailed
+interfaces and adapter plan are recorded in
+`REMOTE_MOVEMENT_PREDICTION_ARCHITECTURE.md`.
+
+Camera orientation and character-body facing are independent replicated values.
+Reconciliation restores authoritative body facing, but the owning client's
+latest unacknowledged view yaw and pitch remain locally owned and are replayed
+without rotating an idle character. Remote presentation interpolates body
+facing for the model and view direction only for aim-dependent presentation.
+
+Gameplay and session code depend only on `INetworkTransport`. ENet and Steam
+Networking Sockets are adapters that carry the same protocol envelopes and use
+one shared transport-channel catalog. Adding gameplay state does not require a
+Steam-specific implementation; adding a declared channel updates adapter
+validation and ENet channel allocation through the shared catalog.
 
 The host's simulation always wins. Prediction grants responsiveness, not authority. Clients may immediately show safe presentation such as local movement or an attack animation, but they cannot declare hits, damage, effects, deaths, or other combat outcomes.
+
+The authority treats movement input as a stream of current intent, not as a
+work queue. When more than one numbered command is waiting for a combatant, the
+authority applies the newest command on the next simulation tick and compacts
+obsolete continuous state. Only recent one-shot movement edges are preserved;
+old jump, crouch, or roll presses are never replayed seconds later. Attack edges
+remain subject to their separate reliable authorization. Each combatant owns an
+independent, bounded input scheduler, and client ticks outside the accepted
+authority-history window are rejected. This prevents a temporary scheduling or
+transport burst from becoming permanent input latency.
 
 Prediction is limited initially to the locally controlled character. The game will not attempt full-world rollback. Because Godot physics can diverge slightly across machines and platforms, reconciliation is considered normal operation rather than an exceptional failure.
 
@@ -83,15 +117,24 @@ The initial network timing values are:
 
 - Clients produce one numbered input frame per 60 Hz physics tick.
 - Clients transmit input packets 60 times per second.
-- The host transmits authoritative snapshots 30 times per second.
-- Remote-player presentation begins with an interpolation buffer of approximately 100 milliseconds.
+- The host transmits compact authoritative movement frames 60 times per second.
+- The host transmits broader authoritative snapshots 30 times per second.
+- Remote-player presentation uses a per-peer adaptive buffer, normally zero to
+  two ticks for stable connections at or below 80 milliseconds RTT.
 - A future 144 Hz simulation may batch two or three input frames into each 60 Hz network packet rather than increasing packet frequency to 144 Hz.
+- The authority may receive redundant or bursty frames, but consumes the newest
+  usable intent per combatant rather than replaying a FIFO backlog.
 
 These values are configuration owned by the multiplayer application layer rather than constants embedded in combat or movement rules.
 
 Movement inputs and replaceable snapshots use unreliable ordered delivery with sequence numbers and redundant recent input where appropriate. Critical structural messages, including joining, spawning, equipment changes, and round transitions, use reliable ordered delivery on separate channels.
 
 Attacks and item activations are numbered actions. Clients resend an unacknowledged action as needed, and the host processes each action identity at most once. Prediction may begin local presentation immediately, but only the host confirms its gameplay outcome.
+
+An action request is emitted on the next 60 Hz simulation tick, giving at most
+one tick of intentional local batching. Accepted action and combat events are
+published during the authority tick that resolves them; neither waits for the
+next 30 Hz snapshot or periodic checkpoint.
 
 Multiplayer diagnostics will measure round-trip time, packet loss, prediction correction distance, correction frequency, and interpolation-buffer underruns. These measurements will guide later tuning.
 
@@ -111,7 +154,17 @@ The periodic checkpoint uses reliable cadence, not necessarily reliable delivery
 The initial replication streams are:
 
 - **Input stream:** client intent sent to the host with input and action identities.
-- **Snapshot stream:** compact authoritative movement and vital state sent 30 times per second using unreliable ordered delivery.
+- **Direct prediction stream:** untrusted movement-only input and state hints sent
+  between connected peers at 60 Hz, with authority-relay fallback.
+- **Accepted movement stream:** authority-validated movement commands relayed to
+  clients on the exact simulation tick where they are applied. Each command is
+  stamped with stable session identity, peer-session generation, combatant, life,
+  source input sequence, and authority tick. The stream repeats the three most
+  recent commands per combatant for loss recovery.
+- **Movement frame stream:** compact authoritative movement state sent 60 times
+  per second using unreliable delivery and application sequencing.
+- **Snapshot stream:** broader authoritative movement, vital, and repair state
+  sent 30 times per second using unreliable delivery and application sequencing.
 - **Event stream:** state changes and presentation facts sent as they occur, with delivery policy chosen by importance.
 - **Checkpoint stream:** a more complete authoritative state sent at a known interval with sequence and revision information.
 - **Resynchronization stream:** a reliably delivered baseline sent on initial join or after a client detects that its replicated revisions disagree with the host.
@@ -119,6 +172,43 @@ The initial replication streams are:
 Structural events such as spawn, despawn, equipment changes, effect creation/removal, respawn, and round transitions use reliable ordered delivery on suitable channels. Replaceable movement state and high-frequency presentation do not wait for obsolete messages.
 
 Clients do not rerun authoritative combat resolution from replicated events. Events describe accepted outcomes for presentation, while snapshots and checkpoints repair observable state if an event is missed.
+
+Because event and snapshot streams use separate transport channels, replicated
+action presentation is ordered by authority simulation tick rather than packet
+arrival time. An older snapshot cannot cancel or restart a newer action event,
+and a repair snapshot for the same attack identity updates state without
+restarting its animation. An owning client's unconfirmed visual prediction may
+finish naturally, but it cannot declare an authoritative gameplay outcome.
+
+Remote clients may replay accepted movement beyond the latest movement frame
+through the shared fixed-tick movement rules. This replay is presentation-only:
+the remote `CharacterBody3D` collision proxy remains at the newest authoritative
+pose. Normal prediction is capped at 150 milliseconds and freezes after 250
+milliseconds without a newer authority frame. New life identities clear the
+timeline, and delayed packets from an older life or peer-session generation are
+discarded.
+
+Direct prediction routes add a separate per-pair route generation. A packet
+must match both peers' current match-session generations, the pair's route
+generation, and the combatant life. Authority-issued 256-bit pair credentials
+authorize only the direct handshake and are never treated as identity or sent
+over the direct route. Peers exchange fresh nonces and mutual HMAC-SHA-256
+proofs bound to the session, both identities and generations, and route
+generation. Mesh establishment and recovery never block
+match start or continuation.
+
+Movement commands and their authority-accepted copies are published during the
+simulation tick that creates them. The 60 Hz authority movement frame is a
+repair cadence, not a gate in front of command delivery. Direct bundles carry
+three-command redundancy and optional movement-only rollback baselines,
+initially at 10 Hz and on important movement transitions.
+The authority separately publishes the exact tick-effective resolved movement
+attributes and capabilities identified by each command's revisions. This keeps
+item authoring data-driven while ensuring prediction uses the same typed
+simulator inputs on every machine.
+Movement extrapolation is suspended while an authority-owned action such as an
+attack is active, because the action policy—not ordinary movement input—owns its
+lunge and movement restrictions.
 
 The checkpoint contains all state relevant to restoring the replicated match view, but references stable content definitions by ID instead of repeatedly transmitting immutable item definitions and assets.
 
@@ -154,7 +244,18 @@ Status: Confirmed for the vertical slice; tuning requires latency playtests
 
 The host uses bounded historical validation for attacks whose immutable policy permits lag compensation.
 
-The host retains a compact history of authoritative combat hit-proxy transforms for approximately 200–250 milliseconds. An attack command carries its client simulation tick and sequence. The host maps that tick onto the authoritative timeline, clamps the permitted rewind to an initial maximum of approximately 200 milliseconds, and validates the attack against the corresponding historical hit proxies.
+The host retains a compact history of authoritative combat hit-proxy transforms
+for approximately 200–250 milliseconds. An attack command carries its client
+simulation tick and sequence. The host maps that tick onto the authoritative
+timeline and validates the attack against the corresponding historical hit
+proxies.
+
+The host measures latency from authority-originated traffic acknowledged by the
+client; it never accepts a client-declared ping value. Per peer, it maintains a
+smoothed RTT and jitter estimate. The eligible rewind allowance is initially
+approximately half that RTT plus a small jitter margin, hard-capped at 200
+milliseconds. Both the requested historical age and the pose actually used are
+clamped to this allowance and the retained history.
 
 This does not rewind the entire Godot physics world. Static-world validation and compact historical combat shapes are coordinated by Godot adapters. The core application receives a validated target set and continues to own action, damage, and effect rules.
 
@@ -167,7 +268,13 @@ The initial action policies are:
 - Persistent areas, mines, and environmental volumes use current authoritative simulation.
 - Self-targeted actions require no spatial rewind.
 
-The rewind window is a tuning value, not a promised permanent constant. Artificial latency and packet-loss tests will compare attacker feedback, defender feedback, correction frequency, and suspicious timestamp behavior before finalizing it.
+The rewind window is a tuning value, not a promised permanent constant.
+Diagnostics expose measured RTT, jitter, granted allowance, requested age, and
+actual rewind used. A host-only test toggle may disable compensation so the
+same encounter can be compared with current-time validation. Artificial
+latency and packet-loss tests will compare attacker feedback, defender
+feedback, correction frequency, and suspicious timestamp behavior before
+finalizing it.
 
 ## Decision 8: Network Protocol Boundary
 

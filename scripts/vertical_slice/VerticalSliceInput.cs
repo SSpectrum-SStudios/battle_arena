@@ -16,6 +16,7 @@ public static class VerticalSliceInput
     public static readonly StringName LookRight = "look_right";
     public static readonly StringName Jump = "jump";
     public static readonly StringName Sprint = "sprint";
+    public static readonly StringName CrouchOrRoll = "crouch";
     public static readonly StringName Attack = "attack";
     public static readonly StringName CameraToggle = "camera_toggle";
     public static readonly StringName ItemActivate1 = "item_activate_1";
@@ -37,7 +38,8 @@ public static class VerticalSliceInput
         EnsureAction(LookRight, 0.15f, null, JoyAxis.RightX, 1f);
 
         EnsureAction(Jump, 0.2f, Key.Space, JoyButton.A);
-        EnsureAction(Sprint, 0.2f, Key.Shift, JoyButton.LeftStick);
+        EnsureAction(Sprint, 0.2f, Key.Ctrl, JoyButton.LeftStick);
+        EnsureAction(CrouchOrRoll, 0.2f, Key.Shift, JoyButton.B);
         EnsureAction(CameraToggle, 0.2f, Key.V, JoyButton.RightStick);
 
         EnsureAction(Attack, 0.2f);
@@ -54,7 +56,7 @@ public static class VerticalSliceInput
         EnsureAction(ItemActivate2, 0.2f, Key.Key2, JoyButton.RightShoulder);
         EnsureAction(ItemActivate3, 0.2f, Key.Key3, JoyButton.X);
         EnsureAction(ItemActivate4, 0.2f, Key.E, JoyButton.Y);
-        EnsureAction(ItemActivate5, 0.2f, Key.R, JoyButton.B);
+        EnsureAction(ItemActivate5, 0.2f, Key.R, JoyButton.DpadDown);
         EnsureAction(ItemActivate6, 0.2f, Key.F, JoyButton.DpadUp);
     }
 

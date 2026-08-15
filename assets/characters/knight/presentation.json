@@ -1,0 +1,77 @@
+{
+  "schemaVersion": 1,
+  "id": "kaykit.knight",
+  "modelScenePath": "res://assets/third_party/kaykit/adventurers_1_0/runtime/Knight.glb",
+  "modelScale": 1.0,
+  "modelYawDegrees": 180.0,
+  "weaponSocketBone": "handslot.r",
+  "hiddenNodeNames": [
+    "1H_Sword_Offhand",
+    "Badge_Shield",
+    "Rectangle_Shield",
+    "Round_Shield",
+    "Spike_Shield",
+    "2H_Sword"
+  ],
+  "externalAnimations": [
+    {
+      "scenePath": "res://assets/third_party/quaternius/universal_animation_library_1/runtime/UAL1_Standard.glb",
+      "sourceClip": "Roll",
+      "targetLibrary": "external",
+      "targetClip": "Roll",
+      "discardUnmappedBones": true,
+      "boneMap": {
+        "root": "root",
+        "pelvis": "hips",
+        "spine_01": "spine",
+        "spine_02": "chest",
+        "Head": "head",
+        "upperarm_l": "upperarm.l",
+        "lowerarm_l": "lowerarm.l",
+        "hand_l": "hand.l",
+        "upperarm_r": "upperarm.r",
+        "lowerarm_r": "lowerarm.r",
+        "hand_r": "hand.r",
+        "thigh_l": "upperleg.l",
+        "calf_l": "lowerleg.l",
+        "foot_l": "foot.l",
+        "ball_l": "toes.l",
+        "thigh_r": "upperleg.r",
+        "calf_r": "lowerleg.r",
+        "foot_r": "foot.r",
+        "ball_r": "toes.r"
+      }
+    }
+  ],
+  "animations": {
+    "locomotion.idle": { "clip": "Idle", "blendSeconds": 0.15, "loop": true },
+    "locomotion.walk": { "clip": "Walking_A", "blendSeconds": 0.12, "referenceSpeed": 3.0, "loop": true },
+    "locomotion.walk_backward": { "clip": "Walking_Backwards", "blendSeconds": 0.12, "referenceSpeed": 3.0, "loop": true },
+    "locomotion.run": { "clip": "Running_A", "blendSeconds": 0.12, "referenceSpeed": 6.0, "loop": true },
+    "locomotion.sprint": { "clip": "Running_B", "blendSeconds": 0.1, "referenceSpeed": 9.0, "loop": true },
+    "locomotion.strafe_left": { "clip": "Running_Strafe_Left", "blendSeconds": 0.12, "referenceSpeed": 6.0, "loop": true },
+    "locomotion.strafe_right": { "clip": "Running_Strafe_Right", "blendSeconds": 0.12, "referenceSpeed": 6.0, "loop": true },
+    "jump.start": { "clip": "Jump_Start", "blendSeconds": 0.06 },
+    "jump.airborne": { "clip": "Jump_Idle", "blendSeconds": 0.08, "loop": true },
+    "jump.land": { "clip": "Jump_Land", "blendSeconds": 0.06 },
+    "roll.forward": {
+      "clip": "external/Roll",
+      "blendSeconds": 0.04
+    },
+    "roll.backward": { "clip": "Dodge_Backward", "blendSeconds": 0.06 },
+    "roll.left": { "clip": "Dodge_Left", "blendSeconds": 0.06 },
+    "roll.right": { "clip": "Dodge_Right", "blendSeconds": 0.06 },
+    "attack.light.1": { "clip": "1H_Melee_Attack_Slice_Diagonal", "blendSeconds": 0.05 },
+    "attack.light.2": { "clip": "1H_Melee_Attack_Slice_Horizontal", "blendSeconds": 0.05 },
+    "attack.light.3": { "clip": "1H_Melee_Attack_Chop", "blendSeconds": 0.05 },
+    "attack.simple": { "clip": "1H_Melee_Attack_Stab", "blendSeconds": 0.05 },
+    "defense.block": { "clip": "Blocking", "blendSeconds": 0.08, "loop": true },
+    "reaction.hit.a": { "clip": "Hit_A", "blendSeconds": 0.04 },
+    "reaction.hit.b": { "clip": "Hit_B", "blendSeconds": 0.04 },
+    "reaction.death": { "clip": "Death_A", "blendSeconds": 0.08 },
+    "mantle.hang": { "clip": "Jump_Idle", "blendSeconds": 0.08, "loop": true },
+    "mantle.climb": { "clip": "Interact", "blendSeconds": 0.08 },
+    "posture.crouch_idle": { "clip": "Idle", "blendSeconds": 0.12, "loop": true },
+    "posture.crouch_move": { "clip": "Walking_A", "blendSeconds": 0.12, "loop": true }
+  }
+}

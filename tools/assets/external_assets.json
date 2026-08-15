@@ -11,6 +11,28 @@
       "sha256": "00777A7B9811A7C7F8DD3FDA4E56604F6A93B33673D64557153F354D677B47AF",
       "archiveRoot": "KayKit-Character-Pack-Adventures-1.0-672074b73ba276876a19e8816ecdc5241817ab47",
       "license": "CC0-1.0"
+    },
+    {
+      "id": "kaykit-character-animations-1.2",
+      "displayName": "KayKit Character Animations 1.2",
+      "version": "1.2",
+      "sourcePage": "https://opengameart.org/content/kaykit-character-animations",
+      "downloadUrl": "https://opengameart.org/sites/default/files/kaykit_character_animations_1.2.zip",
+      "archiveFileName": "kaykit_character_animations_1.2.zip",
+      "sha256": "C9D3FBEA492DC6EDD0903939369A564C2240B892430BCD99E0AEE4876110BB8F",
+      "archiveRoot": ".",
+      "license": "CC0-1.0"
+    },
+    {
+      "id": "quaternius-universal-animation-library-1",
+      "displayName": "Quaternius Universal Animation Library 1 (Godot Retargeted)",
+      "version": "3.0+5c4dae72e49ad4e5959571e00a25d3d872cacba5",
+      "sourcePage": "https://quaternius.itch.io/universal-animation-library",
+      "downloadUrl": "https://codeberg.org/jamesonBradfield/Quaternius_IK_Rigged_with_animations/archive/5c4dae72e49ad4e5959571e00a25d3d872cacba5.zip",
+      "archiveFileName": "quaternius-ik-rigged-5c4dae72e49ad4e5959571e00a25d3d872cacba5.zip",
+      "sha256": "F868B316FACD04D7686784B254F6F1BBCD7E14BC06F3EC70F92A3144DC462767",
+      "archiveRoot": "quaternius_ik_rigged_with_animations",
+      "license": "CC0-1.0"
     }
   ]
 }

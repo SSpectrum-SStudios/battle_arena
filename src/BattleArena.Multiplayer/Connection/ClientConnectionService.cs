@@ -11,7 +11,7 @@ public sealed class ClientConnectionService : IDisposable
     private readonly IProtocolCodec _codec;
     private readonly InboundMessageValidator _validator;
     private readonly ISessionCredentialGenerator _credentialGenerator;
-    private NetworkPeerId? _authorityPeer;
+    private TransportConnectionId? _authorityConnection;
     private bool _joinSent;
     private bool _disposed;
 
@@ -27,7 +27,7 @@ public sealed class ClientConnectionService : IDisposable
         _credentialGenerator = credentialGenerator ?? throw new ArgumentNullException(nameof(credentialGenerator));
 
         _transport.PacketReceived += OnPacketReceived;
-        _transport.PeerDisconnected += OnPeerDisconnected;
+        _transport.ConnectionClosed += OnConnectionClosed;
     }
 
     public event Action<ClientSessionIdentity>? JoinAccepted;
@@ -40,9 +40,9 @@ public sealed class ClientConnectionService : IDisposable
 
     public ClientSessionIdentity? Identity { get; private set; }
 
-    public NetworkPeerId? AuthorityPeer => _authorityPeer;
+    public TransportConnectionId? AuthorityConnection => _authorityConnection;
 
-    public void BeginJoin(NetworkPeerId authorityPeer, string displayName)
+    public void BeginJoin(TransportConnectionId authorityConnection, string displayName)
     {
         if (_joinSent)
         {
@@ -54,7 +54,7 @@ public sealed class ClientConnectionService : IDisposable
             throw new ArgumentException("Display name is required.", nameof(displayName));
         }
 
-        _authorityPeer = authorityPeer;
+        _authorityConnection = authorityConnection;
         _joinSent = true;
         var request = new PacketEnvelope
         {
@@ -69,7 +69,7 @@ public sealed class ClientConnectionService : IDisposable
         };
 
         _transport.Send(new OutboundTransportPacket(
-            authorityPeer,
+            authorityConnection,
             TransportChannel.Connection,
             TransportDelivery.ReliableOrdered,
             _codec.Encode(request)));
@@ -83,13 +83,13 @@ public sealed class ClientConnectionService : IDisposable
         }
 
         _transport.PacketReceived -= OnPacketReceived;
-        _transport.PeerDisconnected -= OnPeerDisconnected;
+        _transport.ConnectionClosed -= OnConnectionClosed;
         _disposed = true;
     }
 
     private void OnPacketReceived(InboundTransportPacket packet)
     {
-        if (packet.Channel != TransportChannel.Connection || packet.Sender != _authorityPeer)
+        if (packet.Channel != TransportChannel.Connection || packet.Sender != _authorityConnection)
         {
             return;
         }
@@ -126,6 +126,8 @@ public sealed class ClientConnectionService : IDisposable
         var accepted = decoded.Envelope.JoinAccepted;
         Identity = new ClientSessionIdentity(
             accepted.SessionId,
+            new SessionPeerId(accepted.SessionPeerId),
+            new ConnectionGeneration(accepted.ConnectionGeneration),
             accepted.PlayerId,
             accepted.CombatantId,
             accepted.ReconnectToken.ToByteArray(),
@@ -135,9 +137,9 @@ public sealed class ClientConnectionService : IDisposable
         JoinAccepted?.Invoke(Identity);
     }
 
-    private void OnPeerDisconnected(NetworkPeerId peerId)
+    private void OnConnectionClosed(TransportConnectionId connectionId)
     {
-        if (peerId == _authorityPeer)
+        if (connectionId == _authorityConnection)
         {
             AuthorityTransportDisconnected?.Invoke();
         }

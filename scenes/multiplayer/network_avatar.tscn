@@ -1,77 +1,62 @@
-[gd_scene load_steps=7 format=3]
+[gd_scene load_steps=4 format=3]
 
 [ext_resource type="Script" path="res://scripts/multiplayer/NetworkAvatar.cs" id="1_avatar"]
+[ext_resource type="PackedScene" path="res://scenes/presentation/knight_character_view.tscn" id="2_knight"]
 
 [sub_resource type="CapsuleShape3D" id="CapsuleShape_body"]
-radius = 0.45
+radius = 0.42
 height = 1.8
 
-[sub_resource type="CapsuleMesh" id="CapsuleMesh_body"]
-radius = 0.45
-height = 1.8
-
-[sub_resource type="SphereMesh" id="SphereMesh_head"]
-radius = 0.36
-height = 0.72
-
-[sub_resource type="BoxMesh" id="BoxMesh_sword"]
-size = Vector3(0.13, 0.13, 1.45)
-
-[sub_resource type="StandardMaterial3D" id="Material_sword"]
-albedo_color = Color(0.82, 0.88, 0.96, 1)
-metallic = 0.75
-roughness = 0.25
-
-[node name="NetworkAvatar" type="CharacterBody3D"]
-collision_layer = 1
-collision_mask = 1
+[node name="NetworkAvatar" type="Node3D"]
 script = ExtResource("1_avatar")
-CameraPitchPath = NodePath("CameraPitch")
-ThirdPersonCameraPath = NodePath("CameraPitch/SpringArm/ThirdPersonCamera")
-FirstPersonCameraPath = NodePath("CameraPitch/FirstPersonCamera")
-CollisionPath = NodePath("BodyCollision")
-BodyMeshPath = NodePath("VisualRoot/Body")
-HeadMeshPath = NodePath("VisualRoot/Head")
-LabelPath = NodePath("StatusLabel")
+SimulationBodyPath = NodePath("SimulationBody")
+VisualAnchorPath = NodePath("VisualAnchor")
+CameraAnchorPath = NodePath("CameraAnchor")
+VisualRootPath = NodePath("VisualAnchor/VisualRoot")
+CharacterViewPath = NodePath("VisualAnchor/VisualRoot/KnightCharacterView")
+CameraYawPath = NodePath("CameraAnchor/CameraYaw")
+CameraPitchPath = NodePath("CameraAnchor/CameraYaw/CameraPitch")
+ThirdPersonCameraPath = NodePath("CameraAnchor/CameraYaw/CameraPitch/SpringArm/ThirdPersonCamera")
+CollisionPath = NodePath("SimulationBody/BodyCollision")
+LabelPath = NodePath("VisualAnchor/StatusLabel")
 
-[node name="BodyCollision" type="CollisionShape3D" parent="."]
+[node name="SimulationBody" type="CharacterBody3D" parent="."]
+collision_layer = 2
+collision_mask = 3
+floor_max_angle = 0.872665
+floor_snap_length = 0.5
+
+[node name="BodyCollision" type="CollisionShape3D" parent="SimulationBody"]
+position = Vector3(0, 0.9, 0)
 shape = SubResource("CapsuleShape_body")
 
-[node name="VisualRoot" type="Node3D" parent="."]
+[node name="VisualAnchor" type="Node3D" parent="."]
 
-[node name="Body" type="MeshInstance3D" parent="VisualRoot"]
-mesh = SubResource("CapsuleMesh_body")
+[node name="VisualRoot" type="Node3D" parent="VisualAnchor"]
 
-[node name="Head" type="MeshInstance3D" parent="VisualRoot"]
-position = Vector3(0, 0.82, 0)
-mesh = SubResource("SphereMesh_head")
+[node name="KnightCharacterView" parent="VisualAnchor/VisualRoot" instance=ExtResource("2_knight")]
 
-[node name="Sword" type="MeshInstance3D" parent="VisualRoot"]
-position = Vector3(0.62, 0.55, -0.78)
-mesh = SubResource("BoxMesh_sword")
-material_override = SubResource("Material_sword")
-
-[node name="StatusLabel" type="Label3D" parent="."]
-position = Vector3(0, 1.68, 0)
+[node name="StatusLabel" type="Label3D" parent="VisualAnchor"]
+position = Vector3(0, 2.2, 0)
 text = "Player"
 font_size = 26
 outline_size = 6
 billboard = 1
 no_depth_test = true
 
-[node name="CameraPitch" type="Node3D" parent="."]
-position = Vector3(0, 1.35, 0)
+[node name="CameraAnchor" type="Node3D" parent="."]
 
-[node name="FirstPersonCamera" type="Camera3D" parent="CameraPitch"]
-current = false
-near = 0.05
-fov = 78.0
+[node name="CameraYaw" type="Node3D" parent="CameraAnchor"]
+position = Vector3(0, 1.45, 0)
 
-[node name="SpringArm" type="SpringArm3D" parent="CameraPitch"]
-spring_length = 4.2
-margin = 0.15
+[node name="CameraPitch" type="Node3D" parent="CameraAnchor/CameraYaw"]
+rotation = Vector3(-0.20944, 0, 0)
+
+[node name="SpringArm" type="SpringArm3D" parent="CameraAnchor/CameraYaw/CameraPitch"]
+spring_length = 5.2
+margin = 0.18
 collision_mask = 1
 
-[node name="ThirdPersonCamera" type="Camera3D" parent="CameraPitch/SpringArm"]
+[node name="ThirdPersonCamera" type="Camera3D" parent="CameraAnchor/CameraYaw/CameraPitch/SpringArm"]
 current = false
 fov = 72.0

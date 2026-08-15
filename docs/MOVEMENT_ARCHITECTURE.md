@@ -76,9 +76,9 @@ Controller defaults will be finalized with the complete control layout, but the 
 - Direction is mostly committed once the roll begins.
 - Available steering is an authored inverse function of current speed: slow movement permits more redirection, while high speed permits only a small correction.
 - Displacement uses a deterministic, code-driven speed curve influenced by entry movement speed.
-- Roll duration is approximately 0.45 seconds as an initial reference but varies as an authored function of movement speed. The exact duration/distance relationship remains to be selected.
+- A released input completes at the authored 0.32-second minimum. Holding the input extends the roll up to the authored 0.85-second maximum. Entry momentum remains the baseline throughout the action, while an authored 3-to-5-meter boost curve is added temporarily on top. These are initial tuning values rather than hard-coded rules.
 - The roll has no invulnerability. Hits resolve normally throughout it.
-- A roll cannot be canceled by attacks, jumps, another roll, or ordinary locomotion once it begins.
+- A roll cannot be canceled by attacks, jumps, another roll, or ordinary locomotion once it begins. Releasing the roll input selects the earliest authored completion point rather than canceling the action immediately.
 - A cooldown begins after completion and must expire before another roll. Cooldown values remain modifiable.
 - The roll changes the collision profile to represent the lower posture.
 - If the standing profile has insufficient clearance at completion, the character remains crouched rather than intersecting the ceiling or being forced through geometry.
@@ -88,15 +88,18 @@ Items and abilities may modify the curve, duration function, distance, steering-
 
 ### Momentum-Scaled Roll
 
-Roll duration, distance, steering, and animation playback derive from entry movement speed:
+Roll boost distance and steering derive from entry movement speed, while input
+hold time selects how long the committed action continues:
 
 - Near the roll-entry threshold, the roll is shorter and slower with substantial steering.
-- At normal running speed, the initial tuning reference is approximately 0.45 seconds.
-- At sprinting speed, the roll is faster, farther, and modestly longer with very limited steering.
+- At normal running speed, entry momentum is preserved and roughly 3.8 meters of additional boost travel is layered over it. A tap produces a compact roll; holding continues the baseline movement and boost curve for substantially farther travel.
+- At sprinting speed, the roll receives the largest boost and retains limited but useful steering.
 - Scaling uses authored curves with diminishing returns so extreme speed modifiers do not produce unbounded duration or distance.
 - Animation playback rate conforms to the resulting authored duration; animation timing does not determine simulation duration.
 
-This deliberately makes a high-speed roll more effective for traversal but also creates a longer period of commitment.
+This deliberately makes a high-speed roll more effective for traversal. The
+player chooses the period of commitment by releasing after the minimum duration
+or holding through the maximum duration.
 
 ### Crouch Hold and Roll Completion
 
@@ -104,7 +107,8 @@ This deliberately makes a high-speed roll more effective for traversal but also 
 - Holding Crouch/Roll while stationary enters and maintains crouch.
 - Moving after entering crouch produces crouch walking.
 - Releasing Crouch/Roll attempts to stand.
-- Starting a roll requires only the press edge; the input does not need to remain held during the non-cancelable roll.
+- Starting a grounded roll requires the press edge. Releasing after the minimum duration completes the short form; holding prolongs it to the maximum duration.
+- Holding Crouch/Roll while airborne with sufficient horizontal momentum queues a landing roll. Releasing before landing clears the queue.
 - At roll completion, held Crouch/Roll requests crouch; otherwise the character attempts to stand.
 - Failure of the taller-profile clearance query forces the character to remain crouched.
 
@@ -121,7 +125,7 @@ The base fighter has distinct standing, crouching, and rolling collision profile
 - Sprint may be requested in any movement direction because the hybrid facing model turns the character toward camera-relative movement input.
 - Sprint is unavailable while crouched, hanging, mantling, rolling, stunned, or during an attack phase that disallows it.
 - Jumping preserves existing sprint momentum.
-- Sprint input while airborne does not directly accelerate the character to sprint speed; it preserves the request for a legal landing transition.
+- Sprint input while airborne intentionally accelerates toward sprint speed, providing additional maneuvering choice while preserving existing momentum.
 - Entering a roll from sprint supplies the high-speed entry values used by the momentum-scaled roll.
 - The base fighter has no sprint stamina cost or forced sprint duration.
 - Controller analog magnitude remains part of the desired movement calculation.
@@ -147,11 +151,15 @@ The movement controller, combat action model, item schema, and network protocol 
 
 - Space/A is the default Jump input.
 - The base jump is responsive and arcade-like rather than strictly realistic.
-- Initial tuning references use approximately 100 milliseconds of coyote time and 100 milliseconds of pre-landing input buffering, represented as integer ticks.
-- Holding Jump produces full height. Releasing it early applies the authored jump-cut policy for a shorter hop.
-- Rising, apex, and falling gravity behavior are separately authored. Falling is faster than rising, with a mild apex treatment that does not create an obvious hover.
+- Initial tuning uses 120 milliseconds of coyote time and 120 milliseconds of pre-landing input buffering, compiled to integer ticks at the active simulation rate.
+- Holding Jump produces full height. Releasing it early raises the authored rising gravity for a shorter hop without discontinuously changing velocity.
+- Rising, apex, and falling gravity behavior are separately authored and smoothly interpolated through the apex velocity band. The fighter starts with a deliberately cartoonish roughly 3.9-meter standing jump, a brief soft apex, and a sharp 45 m/s² descent. These are tuning defaults, not hard-coded rules.
+- Takeoff speed continuously contributes to vertical launch velocity. The base curve raises a 12.5 m/s sprint jump to roughly 4.4 meters while leaving the standing jump near 3.9 meters.
 - Horizontal momentum is preserved at takeoff.
-- Air input applies bounded acceleration instead of setting velocity directly.
+- Air input applies bounded acceleration instead of setting velocity directly. Forward/back authority is strong enough for a standing diagonal W+A/D jump to clear the 5.66-meter slalom-pillar spacing, while A/D-only authority remains weaker.
+- Non-sprint input targets authored run speed and sprint input targets authored sprint speed. Existing takeoff momentum is always preserved, so a run jump does not manufacture sprint speed and releasing Sprint in the air does not erase sprint momentum.
+- Air sprinting is an intentional base-fighter capability: pressing Sprint after takeoff may accelerate the player from run speed toward sprint speed while airborne. It provides additional maneuvering choice and is not treated as a prediction or momentum bug.
+- Air steering changes velocity continuously and has no hidden takeoff-relative speed cap. Steering authority decreases with current horizontal speed; lateral authority falls more sharply than forward/back braking authority.
 - Available redirection is inversely related to horizontal momentum: low-speed jumps permit more steering, while sprint jumps resist immediate reversal but may still curve.
 - Ordinary landing does not lock movement; landing presentation blends without removing control.
 - Landing severity is classified from impact velocity for animation, effects, and future authored mechanics.
@@ -192,11 +200,35 @@ Each equipped weapon item supplies an authored attack set rather than relying on
 
 Combo length is data, not controller structure. One weapon may have a single attack, the default fighter sword may have three steps, and another weapon may have five or more. A particular combo step may deal additional damage, change damage types, apply an effect, or trigger an ability without the movement controller knowing the weapon's identity.
 
-The initial fighter sword uses a three-hit grounded light combo. Left click queues at most the next legal step during the authored input window. Missing the continuation window resets the sequence.
+The initial fighter sword uses a three-hit grounded light combo. Its immutable
+weapon-owned input policy interprets press, hold, and release as follows:
+
+- a tap performs step one;
+- continuing to hold through step one's continuation point queues step two;
+- a separate press in step one's ordinary continuation window may also queue
+  step two;
+- holding after step two never queues step three;
+- step three requires a release followed by a fresh press during an initial
+  220-millisecond finisher window near the end of step two;
+- only one continuation may be queued.
+
+Missing the relevant continuation window resets the sequence. The policy is
+owned by the weapon definition so future weapons may use a different number of
+steps, charge behavior, sprint-context actions, or different input grammar
+without adding weapon-specific branches to the player controller.
 
 The default crouched and airborne attack use the same non-combo attack definition. It is a simple weapon-appropriate swing or jab with no lunge. Attacking while crouched does not attempt to stand. The same definition may select presentation variants if later required, while retaining the same gameplay timeline and payload.
 
 Hit detection uses server-evaluated authored swept shapes or arc samples driven by the action timeline. It does not depend on animation callbacks or `AreaEntered`. The owning client predicts presentation immediately, while authoritative hit confirmation determines effects and damage. A target is hit once per action by default unless the attack explicitly grants a different repeated-hit policy.
+
+Attacks preserve incoming momentum. Attack movement values scale input
+acceleration and steering authority; they do not cap velocity to a percentage
+of normal run speed. The starter sword begins steps one and two at 60% normal
+movement authority and step three at 40%, with an additional authored
+3 m/s² deceleration during each step. Code-driven lunges add to that motion.
+The weapon does not provide sprint acceleration during these attacks. The
+shared crouched/airborne attack preserves ordinary posture/air physics and has
+no lunge.
 
 Physical posture remains relevant: a crouched or rolling hurtbox may pass beneath an attack whose authored query does not overlap it. Rolling itself provides no invulnerability.
 
@@ -276,6 +308,14 @@ This layer does not own a Godot node and does not perform collision queries. It 
 
 Godot remains the source of truth for collision and spatial results. The rules layer remains the source of truth for what the player is attempting and whether a transition is permitted.
 
+Ground step traversal is geometry-independent. Before committing blocked
+planar motion, the Godot adapter uses body test-motion sweeps to establish
+upward clearance, improved forward travel in the requested direction, and a
+walkable downward landing within the compiled step height. A small compiled
+forward-assist distance resolves tangent contact at convex corners. Authored
+stair ramps remain useful level geometry, but ordinary ledge traversal must not
+depend on them.
+
 ### Simulation Driver
 
 `CharacterSimulationDriver` coordinates one fixed tick:
@@ -318,6 +358,12 @@ On correction, the client restores the complete authoritative simulation state a
 - local correction smoothing;
 - first-person visibility policy;
 - remote visual interpolation.
+
+Continuous locomotion is driven by collision-resolved velocity transformed into
+character-local forward and lateral components. The presentation adapter damps
+those values into a synchronized directional blend space and separately blends
+the airborne pose. This avoids clip identity changes at arbitrary speed
+thresholds and gives strafing and diagonal corrections continuous visual input.
 
 Presentation never decides whether a jump, roll, mantle, attack, or hit occurred.
 
@@ -476,6 +522,13 @@ Movement uses a compiled attribute snapshot assembled in acquisition order, matc
 
 Base class values, persistent item modifiers, and per-life runtime effects remain distinct inputs to compilation. The simulator receives an immutable compiled snapshot plus a revision. Changes take effect on the authored tick and are included in prediction reconciliation.
 
+The base fighter values are authored in a versioned movement profile rather
+than constructed inside a Godot controller. Content loading validates the
+profile and compiles units such as designer-facing degrees per second into the
+immutable units consumed by the plain C# simulator. Equipment and runtime
+effects will compile subsequent revisions without changing the underlying
+movement policies.
+
 ## Testing Strategy
 
 ### Plain C# Tests
@@ -525,7 +578,36 @@ Each mechanic receives a small tuning arena and on-screen diagnostics. Values re
 10. Replace the placeholder sword swing with an authored attack timeline and animation.
 11. Perform latency/jitter/loss tuning and tester-facing polish.
 
+## Character Presentation Boundary
+
+The first prototype uses the KayKit Knight and one-handed sword. This is an
+asset choice, not a simulation dependency. Movement, combat, prediction, and
+weapon definitions refer to stable semantic animation identifiers such as
+`locomotion.run`, `roll.forward`, and `attack.light.2`. A versioned character
+presentation definition maps those identifiers to imported clip names, model
+paths, sockets, and model-specific visibility rules.
+
+The generic rig view owns model instantiation and animation-name translation.
+Replacing the Knight therefore requires a new presentation definition and, when
+necessary, another rig adapter; it does not require changes to authoritative
+movement or network state. Temporary fallbacks for crouching and mantling are
+explicit in the Knight definition until purpose-built animations are available.
+
+Presentation definitions may also import clips from external animation-only
+scenes. Each binding declares its source clip, target animation library, and an
+explicit bone-name map when skeleton conventions differ. Rotation tracks are
+retargeted as deltas from the source rest pose onto the destination rest pose;
+limited root and hip translation is rescaled, while unsupported scale and
+unmapped-bone tracks are discarded.
+
+The Knight currently maps `roll.forward` to the CC0 Quaternius Universal
+Animation Library `Roll` clip. This provides a genuine tuck-and-roll instead of
+rotating the whole model as one rigid object. The clip is presentation-only and
+is timed against the simulated maximum roll; an early release transitions out
+at the simulated minimum. Simulation still owns displacement, collision,
+commitment, and cooldown. Visual or imported root motion never becomes
+authoritative.
+
 ## Open Decisions
 
-1. Which KayKit fighter, weapon, and animation subset to promote into the tracked game assets.
-2. Target tuning metrics and the first movement test-course layout.
+1. Target tuning metrics and the first movement test-course layout.

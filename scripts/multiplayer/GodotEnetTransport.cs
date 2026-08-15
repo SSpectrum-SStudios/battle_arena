@@ -7,16 +7,15 @@ namespace BattleArena.GodotNetworking;
 
 public partial class GodotEnetTransport : Node, INetworkTransport
 {
-    private const int ChannelCount = 5;
     private ENetMultiplayerPeer? _peer;
     private MultiplayerPeer.ConnectionStatus _lastConnectionStatus =
         MultiplayerPeer.ConnectionStatus.Disconnected;
 
     public event Action<InboundTransportPacket>? PacketReceived;
 
-    public event Action<NetworkPeerId>? PeerConnected;
+    public event Action<TransportConnectionId>? ConnectionOpened;
 
-    public event Action<NetworkPeerId>? PeerDisconnected;
+    public event Action<TransportConnectionId>? ConnectionClosed;
 
     public event Action<string>? StatusChanged;
 
@@ -24,11 +23,16 @@ public partial class GodotEnetTransport : Node, INetworkTransport
 
     public bool IsAuthority { get; private set; }
 
+    public TransportKind Kind => TransportKind.Enet;
+
     public Error Host(int port, int maximumClients)
     {
         Stop();
         var peer = new ENetMultiplayerPeer();
-        var error = peer.CreateServer(port, maximumClients, ChannelCount);
+        var error = peer.CreateServer(
+            port,
+            maximumClients,
+            TransportChannels.RequiredChannelCount);
         if (error != Error.Ok)
         {
             peer.Dispose();
@@ -46,7 +50,10 @@ public partial class GodotEnetTransport : Node, INetworkTransport
         ArgumentException.ThrowIfNullOrWhiteSpace(address);
         Stop();
         var peer = new ENetMultiplayerPeer();
-        var error = peer.CreateClient(address, port, ChannelCount);
+        var error = peer.CreateClient(
+            address,
+            port,
+            TransportChannels.RequiredChannelCount);
         if (error != Error.Ok)
         {
             peer.Dispose();
@@ -67,7 +74,7 @@ public partial class GodotEnetTransport : Node, INetworkTransport
             throw new InvalidOperationException("ENet transport is not connected.");
         }
 
-        if (packet.Channel is < TransportChannel.Input or > TransportChannel.Connection)
+        if (!TransportChannels.IsDefined(packet.Channel))
         {
             throw new ArgumentOutOfRangeException(nameof(packet), "Transport channel is not supported.");
         }
@@ -76,7 +83,7 @@ public partial class GodotEnetTransport : Node, INetworkTransport
         _peer.TransferChannel = (int)packet.Channel;
         _peer.TransferMode = packet.Delivery switch
         {
-            TransportDelivery.UnreliableOrdered => MultiplayerPeer.TransferModeEnum.UnreliableOrdered,
+            TransportDelivery.Unreliable => MultiplayerPeer.TransferModeEnum.Unreliable,
             TransportDelivery.ReliableOrdered => MultiplayerPeer.TransferModeEnum.Reliable,
             _ => throw new ArgumentOutOfRangeException(nameof(packet), "Transport delivery mode is not supported."),
         };
@@ -120,15 +127,16 @@ public partial class GodotEnetTransport : Node, INetworkTransport
                 continue;
             }
 
-            if (senderValue == 0 || channelValue is < 0 or >= ChannelCount)
+            var channel = (TransportChannel)channelValue;
+            if (senderValue == 0 || !TransportChannels.IsDefined(channel))
             {
                 StatusChanged?.Invoke("Discarded ENet packet with invalid peer or channel metadata.");
                 continue;
             }
 
             PacketReceived?.Invoke(new InboundTransportPacket(
-                new NetworkPeerId(senderValue),
-                (TransportChannel)channelValue,
+                new TransportConnectionId(senderValue),
+                channel,
                 payload));
         }
     }
@@ -168,9 +176,9 @@ public partial class GodotEnetTransport : Node, INetworkTransport
             return;
         }
 
-        var networkPeer = new NetworkPeerId(checked((ulong)peerId));
+        var connectionId = new TransportConnectionId(checked((ulong)peerId));
         StatusChanged?.Invoke($"ENet peer {peerId} connected");
-        PeerConnected?.Invoke(networkPeer);
+        ConnectionOpened?.Invoke(connectionId);
     }
 
     private void OnPeerDisconnected(long peerId)
@@ -180,9 +188,9 @@ public partial class GodotEnetTransport : Node, INetworkTransport
             return;
         }
 
-        var networkPeer = new NetworkPeerId(checked((ulong)peerId));
+        var connectionId = new TransportConnectionId(checked((ulong)peerId));
         StatusChanged?.Invoke($"ENet peer {peerId} disconnected");
-        PeerDisconnected?.Invoke(networkPeer);
+        ConnectionClosed?.Invoke(connectionId);
     }
 
     private void ReportConnectionStatusChange()

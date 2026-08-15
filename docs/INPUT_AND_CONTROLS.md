@@ -13,14 +13,15 @@ Gameplay code reads semantic Godot input actions rather than physical keys, mous
 | Move | `W`, `A`, `S`, `D` | Left stick |
 | Look | Mouse | Right stick |
 | Jump | `Space` | A / Cross |
-| Sprint | `Shift` | Left-stick click |
+| Sprint | `Left Ctrl` | Left-stick click |
+| Crouch / Roll | `Left Shift` | `B` |
 | Attack | Left mouse | Right trigger |
 | Switch camera | `V` | Right-stick click |
 | Item activation 1 | `Q` | Left shoulder |
 | Item activation 2 | `2` | Right shoulder |
 | Item activation 3 | `3` | X / Square |
 | Item activation 4 | `E` | Y / Triangle |
-| Item activation 5 | `R` | B / Circle |
+| Item activation 5 | `R` | D-pad down |
 | Item activation 6 | `F` | D-pad up |
 
 The vertical-slice poison aura is temporarily assigned to item activation 1. The other item actions are defined now so item scripts never need dedicated physical-key logic.

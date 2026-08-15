@@ -12,7 +12,7 @@ public sealed class AuthorityConnectionService : IDisposable
     private readonly InboundMessageValidator _validator;
     private readonly ISessionCredentialGenerator _credentialGenerator;
     private readonly AuthoritySessionConfiguration _configuration;
-    private readonly Dictionary<NetworkPeerId, ConnectedPlayer> _players = [];
+    private readonly Dictionary<TransportConnectionId, ConnectedPlayer> _players = [];
     private ulong _nextEnvelopeSequence = 1;
     private ulong _nextPlayerId = 2;
     private ulong _nextCombatantId = 2;
@@ -33,14 +33,14 @@ public sealed class AuthorityConnectionService : IDisposable
         SessionId = credentialGenerator.CreateSessionId();
 
         _transport.PacketReceived += OnPacketReceived;
-        _transport.PeerDisconnected += OnPeerDisconnected;
+        _transport.ConnectionClosed += OnConnectionClosed;
     }
 
     public event Action<ConnectedPlayer>? PlayerJoined;
 
     public event Action<ConnectedPlayer>? PlayerTransportDisconnected;
 
-    public event Action<NetworkPeerId, ProtocolViolation>? ProtocolViolationDetected;
+    public event Action<TransportConnectionId, ProtocolViolation>? ProtocolViolationDetected;
 
     public ulong SessionId { get; }
 
@@ -71,7 +71,7 @@ public sealed class AuthorityConnectionService : IDisposable
             };
 
             _transport.Send(new OutboundTransportPacket(
-                player.PeerId,
+                player.ConnectionId,
                 TransportChannel.Connection,
                 TransportDelivery.ReliableOrdered,
                 _codec.Encode(start)));
@@ -86,7 +86,7 @@ public sealed class AuthorityConnectionService : IDisposable
         }
 
         _transport.PacketReceived -= OnPacketReceived;
-        _transport.PeerDisconnected -= OnPeerDisconnected;
+        _transport.ConnectionClosed -= OnConnectionClosed;
         _disposed = true;
     }
 
@@ -124,9 +124,9 @@ public sealed class AuthorityConnectionService : IDisposable
         AcceptJoin(packet.Sender, decoded.Envelope.JoinRequest);
     }
 
-    private void AcceptJoin(NetworkPeerId peerId, JoinRequest request)
+    private void AcceptJoin(TransportConnectionId connectionId, JoinRequest request)
     {
-        if (_players.ContainsKey(peerId))
+        if (_players.ContainsKey(connectionId))
         {
             return;
         }
@@ -134,18 +134,21 @@ public sealed class AuthorityConnectionService : IDisposable
         if (_players.Count >= _configuration.MaximumRemotePlayers)
         {
             ProtocolViolationDetected?.Invoke(
-                peerId,
+                connectionId,
                 new ProtocolViolation(ProtocolViolationCode.InvalidSession, "The hosted session is full."));
             return;
         }
 
+        var playerId = _nextPlayerId++;
         var player = new ConnectedPlayer(
-            peerId,
-            _nextPlayerId++,
+            connectionId,
+            new SessionPeerId(playerId),
+            ConnectionGeneration.Initial,
+            playerId,
             _nextCombatantId++,
             request.DisplayName.Trim(),
             _credentialGenerator.CreateReconnectToken());
-        _players.Add(peerId, player);
+        _players.Add(connectionId, player);
 
         var accepted = new PacketEnvelope
         {
@@ -155,6 +158,8 @@ public sealed class AuthorityConnectionService : IDisposable
             JoinAccepted = new JoinAccepted
             {
                 SessionId = SessionId,
+                SessionPeerId = player.SessionPeerId.Value,
+                ConnectionGeneration = player.ConnectionGeneration.Value,
                 PlayerId = player.PlayerId,
                 CombatantId = player.CombatantId,
                 ReconnectToken = ByteString.CopyFrom(player.ReconnectToken),
@@ -165,16 +170,16 @@ public sealed class AuthorityConnectionService : IDisposable
         };
 
         _transport.Send(new OutboundTransportPacket(
-            peerId,
+            connectionId,
             TransportChannel.Connection,
             TransportDelivery.ReliableOrdered,
             _codec.Encode(accepted)));
         PlayerJoined?.Invoke(player);
     }
 
-    private void OnPeerDisconnected(NetworkPeerId peerId)
+    private void OnConnectionClosed(TransportConnectionId connectionId)
     {
-        if (_players.TryGetValue(peerId, out var player))
+        if (_players.Remove(connectionId, out var player))
         {
             PlayerTransportDisconnected?.Invoke(player);
         }

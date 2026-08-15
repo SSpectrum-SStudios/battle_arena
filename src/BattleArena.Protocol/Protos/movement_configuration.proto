@@ -1,0 +1,93 @@
+syntax = "proto3";
+
+package battle_arena.protocol.v1;
+option csharp_namespace = "BattleArena.Protocol.V1";
+
+// These are the authority-resolved values consumed by the deterministic
+// movement simulator. Items and effects remain data-driven; the authority
+// compiles them into this typed, bounded representation.
+message ResolvedGroundMovementAttributes {
+  double maximum_run_speed = 1;
+  double maximum_sprint_speed = 2;
+  double run_acceleration = 3;
+  double sprint_acceleration = 4;
+  double braking_deceleration = 5;
+  double reversal_deceleration = 6;
+  double low_speed_turn_rate_radians = 7;
+  double high_speed_turn_rate_radians = 8;
+  double reversal_dot_threshold = 9;
+  double maximum_step_height = 10;
+  double floor_snap_distance = 11;
+  double maximum_floor_angle_radians = 12;
+  double step_forward_assist_distance = 13;
+}
+
+message ResolvedAirMovementAttributes {
+  double forward_air_acceleration = 1;
+  double lateral_air_acceleration = 2;
+  double maximum_run_air_speed = 3;
+  double maximum_air_speed = 4;
+  double high_speed_forward_control_multiplier = 5;
+  double high_speed_lateral_control_multiplier = 6;
+  double turn_rate_radians = 7;
+}
+
+message ResolvedJumpMovementAttributes {
+  double jump_velocity = 1;
+  double jump_velocity_per_horizontal_speed = 2;
+  double rising_gravity = 3;
+  double apex_gravity = 4;
+  double falling_gravity = 5;
+  double maximum_fall_speed = 6;
+  double jump_release_gravity = 7;
+  double apex_velocity_threshold = 8;
+  uint64 coyote_duration_ticks = 9;
+  uint64 input_buffer_duration_ticks = 10;
+}
+
+message ResolvedCrouchRollAttributes {
+  double roll_entry_speed = 1;
+  double maximum_crouch_speed = 2;
+  double minimum_roll_boost_distance = 3;
+  double maximum_roll_boost_distance = 4;
+  uint64 minimum_roll_duration_ticks = 5;
+  uint64 maximum_roll_duration_ticks = 6;
+  uint64 roll_cooldown_ticks = 7;
+  double low_speed_steering_rate_radians = 8;
+  double high_speed_steering_rate_radians = 9;
+  double standing_capsule_height = 10;
+  double crouching_capsule_height = 11;
+  double rolling_capsule_height = 12;
+  double capsule_radius = 13;
+}
+
+// Capabilities describe whether a behavior exists, not its numeric tuning.
+// A new behavior requires an explicit protocol field and simulator support.
+message ResolvedMovementCapabilities {
+  bool can_sprint = 1;
+  bool can_jump = 2;
+  bool can_crouch = 3;
+  bool can_roll = 4;
+  bool can_grab_ledge = 5;
+  bool can_mantle = 6;
+  uint32 maximum_jump_count = 7;
+  uint32 maximum_air_roll_count = 8;
+}
+
+message AuthorityMovementConfigurationUpdate {
+  fixed64 combatant_id = 1;
+  fixed64 life_id = 2;
+  uint64 movement_profile_revision = 3;
+  uint64 movement_capability_revision = 4;
+  uint64 effective_authority_tick = 5;
+  ResolvedGroundMovementAttributes ground = 6;
+  ResolvedAirMovementAttributes air = 7;
+  ResolvedJumpMovementAttributes jump = 8;
+  ResolvedCrouchRollAttributes crouch_roll = 9;
+  ResolvedMovementCapabilities capabilities = 10;
+}
+
+message AuthorityMovementConfigurationBatch {
+  uint64 stream_sequence = 1;
+  repeated AuthorityMovementConfigurationUpdate updates = 2;
+}

@@ -1,0 +1,202 @@
+syntax = "proto3";
+
+package battle_arena.protocol.v1;
+option csharp_namespace = "BattleArena.Protocol.V1";
+
+import "client_commands.proto";
+import "common.proto";
+
+enum PredictionTransportKind {
+  PREDICTION_TRANSPORT_KIND_UNSPECIFIED = 0;
+  PREDICTION_TRANSPORT_KIND_ENET = 1;
+  PREDICTION_TRANSPORT_KIND_STEAM = 2;
+}
+
+enum PredictionRouteRevocationReason {
+  PREDICTION_ROUTE_REVOCATION_REASON_UNSPECIFIED = 0;
+  PREDICTION_ROUTE_REVOCATION_REASON_PEER_DEPARTED = 1;
+  PREDICTION_ROUTE_REVOCATION_REASON_PEER_RECONNECTED = 2;
+  PREDICTION_ROUTE_REVOCATION_REASON_ROUTE_REPLACED = 3;
+  PREDICTION_ROUTE_REVOCATION_REASON_CREDENTIAL_EXPIRED = 4;
+  PREDICTION_ROUTE_REVOCATION_REASON_PROTOCOL_VIOLATION = 5;
+}
+
+enum PredictionMeshRejectionReason {
+  PREDICTION_MESH_REJECTION_REASON_UNSPECIFIED = 0;
+  PREDICTION_MESH_REJECTION_REASON_UNAUTHORIZED = 1;
+  PREDICTION_MESH_REJECTION_REASON_STALE_GENERATION = 2;
+  PREDICTION_MESH_REJECTION_REASON_WRONG_IDENTITY = 3;
+  PREDICTION_MESH_REJECTION_REASON_EXPIRED = 4;
+  PREDICTION_MESH_REJECTION_REASON_INCOMPATIBLE_PROTOCOL = 5;
+}
+
+// Adapter-owned route data. Only the matching ENet or Steam adapter interprets
+// payload. Application services validate its version, kind, and size.
+message PredictionRouteDescriptor {
+  uint32 descriptor_version = 1;
+  PredictionTransportKind transport_kind = 2;
+  bytes payload = 3;
+}
+
+// Version 1 payload used only by the ENet prediction adapter. The containing
+// PredictionRouteDescriptor remains opaque to application services.
+message EnetPredictionRouteDescriptorPayload {
+  string address = 1;
+  uint32 port = 2;
+}
+
+// Version 1 payload used only by the Steam prediction adapter.
+message SteamPredictionRouteDescriptorPayload {
+  fixed64 steam_id = 1;
+  uint32 virtual_port = 2;
+}
+
+message PredictionPeerRosterEntry {
+  fixed64 session_peer_id = 1;
+  uint32 peer_session_generation = 2;
+  fixed64 player_id = 3;
+  fixed64 combatant_id = 4;
+  string display_name = 5;
+  bool is_authority = 6;
+}
+
+message PeerRosterUpdate {
+  uint64 roster_revision = 1;
+  repeated PredictionPeerRosterEntry peers = 2;
+}
+
+message PredictionRouteAdvertisement {
+  reserved 1, 2;
+  PredictionRouteDescriptor route_descriptor = 3;
+}
+
+// The authority sends one endpoint-specific authorization to each peer. The
+// credential is used only by the direct control handshake.
+message PredictionRouteAuthorization {
+  fixed64 local_session_peer_id = 1;
+  uint32 local_peer_session_generation = 2;
+  fixed64 remote_session_peer_id = 3;
+  uint32 remote_peer_session_generation = 4;
+  uint32 prediction_route_generation = 5;
+  PredictionRouteDescriptor remote_descriptor = 6;
+  bytes route_credential = 7;
+  // Initiation is derived: the lower session peer ID initiates.
+  reserved 8;
+  uint64 expires_authority_tick = 9;
+}
+
+message PredictionRouteRevoked {
+  fixed64 local_session_peer_id = 1;
+  fixed64 remote_session_peer_id = 2;
+  uint32 prediction_route_generation = 3;
+  PredictionRouteRevocationReason reason = 4;
+  uint32 local_peer_session_generation = 5;
+  uint32 remote_peer_session_generation = 6;
+}
+
+// Untrusted movement-only rollback baseline. It intentionally excludes combat,
+// health, equipment, effects, lives, and world state.
+message PredictedMovementState {
+  uint64 client_tick = 1;
+  uint64 estimated_authority_tick = 2;
+  uint64 last_included_input_sequence = 3;
+  uint64 movement_profile_revision = 4;
+  uint64 movement_capability_revision = 5;
+  Vector3Value position = 6;
+  Vector3Value velocity = 7;
+  float view_yaw_radians = 8;
+  float view_pitch_radians = 9;
+  float body_facing_yaw_radians = 10;
+  bool is_grounded = 11;
+  ReplicatedLocomotionMode locomotion_mode = 12;
+  ReplicatedPostureMode posture_mode = 13;
+  uint64 movement_mode_elapsed_ticks = 14;
+  ReplicatedJumpPhase jump_phase = 15;
+  uint64 ticks_since_grounded = 16;
+  optional uint64 buffered_jump_remaining_ticks = 17;
+  bool jump_cut_applied = 18;
+  Vector3Value roll_direction = 19;
+  float roll_entry_speed = 20;
+  float roll_boost_distance = 21;
+  uint64 roll_duration_ticks = 22;
+  uint64 roll_cooldown_remaining_ticks = 23;
+  bool landing_roll_queued = 24;
+  ReplicatedMovementActionMode movement_action_mode = 25;
+  optional ReplicatedTraversalState traversal = 26;
+}
+
+message MovementPredictionBundle {
+  uint64 bundle_sequence = 1;
+  fixed64 source_combatant_id = 2;
+  fixed64 source_life_id = 3;
+  reserved 4, 5;
+  repeated ClientInputFrame commands = 6;
+  optional PredictedMovementState rollback_state = 7;
+  // Snapshot acknowledgement carried on the authority-plane copy of the same
+  // semantic bundle. Direct peers ignore this authority-specific hint.
+  uint64 latest_authority_sequence = 8;
+}
+
+message PredictionMeshHello {
+  bytes initiator_nonce = 1;
+}
+
+message PredictionMeshChallenge {
+  uint64 hello_packet_sequence = 1;
+  bytes responder_nonce = 2;
+  bytes responder_proof = 3;
+}
+
+message PredictionMeshProof {
+  uint64 challenge_packet_sequence = 1;
+  bytes initiator_proof = 2;
+}
+
+message PredictionMeshAccepted {
+  uint64 proof_packet_sequence = 1;
+  bytes responder_confirmation = 2;
+}
+
+message PredictionMeshRejected {
+  uint64 hello_packet_sequence = 1;
+  PredictionMeshRejectionReason reason = 2;
+}
+
+message DirectClockProbe {
+  uint64 probe_sequence = 1;
+  fixed64 source_send_timestamp_microseconds = 2;
+}
+
+message DirectClockReply {
+  uint64 probe_sequence = 1;
+  fixed64 source_send_timestamp_microseconds = 2;
+  fixed64 receiver_receive_timestamp_microseconds = 3;
+  fixed64 receiver_send_timestamp_microseconds = 4;
+  uint64 receiver_estimated_authority_tick = 5;
+}
+
+// Direct peer traffic has a smaller envelope and a separate validator from the
+// mandatory authority-plane PacketEnvelope.
+message PredictionPacketEnvelope {
+  uint32 protocol_version = 1;
+  fixed64 session_id = 2;
+  fixed64 source_session_peer_id = 3;
+  fixed64 destination_session_peer_id = 4;
+  uint32 source_peer_session_generation = 5;
+  uint32 prediction_route_generation = 6;
+  uint64 packet_sequence = 7;
+  uint64 client_tick = 8;
+  uint64 estimated_authority_tick = 9;
+  uint32 destination_peer_session_generation = 10;
+
+  oneof payload {
+    PredictionMeshHello mesh_hello = 20;
+    PredictionMeshAccepted mesh_accepted = 21;
+    PredictionMeshRejected mesh_rejected = 22;
+    MovementPredictionBundle movement_prediction_bundle = 23;
+    DirectClockProbe direct_clock_probe = 24;
+    DirectClockReply direct_clock_reply = 25;
+    PredictionMeshChallenge mesh_challenge = 26;
+    PredictionMeshProof mesh_proof = 27;
+  }
+}

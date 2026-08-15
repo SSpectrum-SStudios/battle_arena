@@ -323,6 +323,105 @@ public sealed class CombatApplicationFacade
         return HitResult(RegisterHitStatus.Accepted, executionId, targetCombatantId);
     }
 
+    /// <summary>
+    /// Accepts every legal hit against the same pre-resolution authority state,
+    /// then resolves the accepted payloads. This preserves legal trades and
+    /// mutual elimination when two committed attacks connect on one tick.
+    /// </summary>
+    public IReadOnlyList<RegisterHitResult> RegisterHitsSimultaneously(
+        IEnumerable<SimultaneousHitRequest> requests)
+    {
+        ArgumentNullException.ThrowIfNull(requests);
+        var accepted = new List<(ActionExecution Execution, CombatantState Target)>();
+        var results = new List<RegisterHitResult>();
+        foreach (var request in requests)
+        {
+            if (!_actionExecutions.TryGetValue(request.ExecutionId, out var execution))
+            {
+                results.Add(HitResult(
+                    RegisterHitStatus.ExecutionNotFound,
+                    request.ExecutionId,
+                    request.TargetCombatantId));
+                continue;
+            }
+
+            if (execution.IsEnded)
+            {
+                results.Add(HitResult(
+                    RegisterHitStatus.ExecutionEnded,
+                    request.ExecutionId,
+                    request.TargetCombatantId));
+                continue;
+            }
+
+            if (!IsSourceLifeActive(
+                    execution.SourceCombatantId,
+                    execution.SourceLifeGenerationId))
+            {
+                execution.End();
+                results.Add(HitResult(
+                    RegisterHitStatus.SourceLifeInactive,
+                    request.ExecutionId,
+                    request.TargetCombatantId));
+                continue;
+            }
+
+            if (!_combatants.TryGetValue(request.TargetCombatantId, out var target))
+            {
+                results.Add(HitResult(
+                    RegisterHitStatus.TargetNotFound,
+                    request.ExecutionId,
+                    request.TargetCombatantId));
+                continue;
+            }
+
+            if (target.Combatant.IsEliminated)
+            {
+                results.Add(HitResult(
+                    RegisterHitStatus.TargetEliminated,
+                    request.ExecutionId,
+                    request.TargetCombatantId));
+                continue;
+            }
+
+            if (!execution.TryAcceptHit(request.TargetCombatantId, CurrentTime))
+            {
+                results.Add(HitResult(
+                    RegisterHitStatus.RejectedByHitPolicy,
+                    request.ExecutionId,
+                    request.TargetCombatantId));
+                continue;
+            }
+
+            accepted.Add((execution, target));
+            results.Add(HitResult(
+                RegisterHitStatus.Accepted,
+                request.ExecutionId,
+                request.TargetCombatantId));
+        }
+
+        foreach (var (execution, target) in accepted)
+        {
+            foreach (var effectDefinition in execution.Definition.Effects)
+            {
+                switch (effectDefinition)
+                {
+                    case CombatActionEffectDefinition.ImmediateDamage immediateDamage:
+                        ResolveImmediateDamage(execution, target, immediateDamage);
+                        break;
+                    case CombatActionEffectDefinition.ApplyPeriodicDamage periodicDamage:
+                        ApplyPeriodicDamage(execution, target, periodicDamage.Effect);
+                        break;
+                    default:
+                        throw new InvalidOperationException(
+                            $"Unsupported combat-action effect: {effectDefinition.GetType().Name}.");
+                }
+            }
+        }
+
+        return results.AsReadOnly();
+    }
+
     public bool EndAction(ActionExecutionId executionId)
     {
         if (!_actionExecutions.Remove(executionId, out var execution))

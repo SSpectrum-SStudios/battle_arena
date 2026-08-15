@@ -19,6 +19,8 @@ message JoinAccepted {
   uint32 simulation_ticks_per_second = 5;
   uint32 snapshot_rate = 6;
   uint32 checkpoint_interval_ticks = 7;
+  fixed64 session_peer_id = 8;
+  uint32 connection_generation = 9;
 }
 
 message ReconnectRequest {

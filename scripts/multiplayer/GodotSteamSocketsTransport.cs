@@ -1,13 +1,15 @@
 #nullable enable
 
 using BattleArena.Multiplayer.Transport;
+using BattleArena.Multiplayer.Prediction;
 using Godot;
 using GodotSteam;
 using Steam = GodotSteam.Steam;
 
 namespace BattleArena.GodotNetworking;
 
-public partial class GodotSteamSocketsTransport : Node, INetworkTransport
+public partial class GodotSteamSocketsTransport : Node, INetworkTransport,
+    IAuthenticatedSteamIdentityDirectory
 {
     private const uint InvalidHandle = 0;
     private const int MaximumMessagesPerPoll = 256;
@@ -18,12 +20,13 @@ public partial class GodotSteamSocketsTransport : Node, INetworkTransport
     private bool _subscribed;
 
     public event Action<InboundTransportPacket>? PacketReceived;
-    public event Action<NetworkPeerId>? PeerConnected;
-    public event Action<NetworkPeerId>? PeerDisconnected;
+    public event Action<TransportConnectionId>? ConnectionOpened;
+    public event Action<TransportConnectionId>? ConnectionClosed;
     public event Action<string>? StatusChanged;
 
     public bool IsRunning => _pollGroup != 0;
     public bool IsAuthority { get; private set; }
+    public TransportKind Kind => TransportKind.Steam;
     public Func<ulong, bool>? MayAcceptSteamPeer { get; set; }
 
     public Error Host()
@@ -93,7 +96,7 @@ public partial class GodotSteamSocketsTransport : Node, INetworkTransport
         packet.Payload.Span.CopyTo(payload.AsSpan(1));
         var flags = packet.Delivery switch
         {
-            TransportDelivery.UnreliableOrdered => Steam.NetworkingSendNoDelay,
+            TransportDelivery.Unreliable => Steam.NetworkingSendNoDelay,
             TransportDelivery.ReliableOrdered => Steam.NetworkingSendReliable | Steam.NetworkingSendNoNagle,
             _ => throw new ArgumentOutOfRangeException(nameof(packet)),
         };
@@ -125,13 +128,13 @@ public partial class GodotSteamSocketsTransport : Node, INetworkTransport
             }
 
             var channel = (TransportChannel)payload[0];
-            if (channel is < TransportChannel.Input or > TransportChannel.Connection)
+            if (!TransportChannels.IsDefined(channel))
             {
                 continue;
             }
 
             PacketReceived?.Invoke(new InboundTransportPacket(
-                new NetworkPeerId(connection),
+                new TransportConnectionId(connection),
                 channel,
                 payload.AsMemory(1)));
         }
@@ -196,9 +199,15 @@ public partial class GodotSteamSocketsTransport : Node, INetworkTransport
         var connection = checked((uint)connectionHandle);
         var state = (Steam.NetworkingConnectionState)details["connection_state"].AsInt64();
         var remoteSteamId = details["identity"].AsUInt64();
+        var listenSocket = details["listen_socket"].AsUInt32();
 
         if (state == Steam.NetworkingConnectionState.Connecting && IsAuthority)
         {
+            if (listenSocket != _listenSocket)
+            {
+                return;
+            }
+
             if (_remoteSteamIds.ContainsKey(connection))
             {
                 return;
@@ -226,24 +235,39 @@ public partial class GodotSteamSocketsTransport : Node, INetworkTransport
 
         if (state == Steam.NetworkingConnectionState.Connected)
         {
+            // Steam's callback is process-global. A client must ignore handles
+            // owned by the separate prediction transport.
+            if (!_remoteSteamIds.ContainsKey(connection))
+            {
+                return;
+            }
+
             _remoteSteamIds[connection] = remoteSteamId;
             if (_connectedConnections.Add(connection))
             {
                 StatusChanged?.Invoke($"Steam connection {connection} established with {remoteSteamId}");
-                PeerConnected?.Invoke(new NetworkPeerId(connection));
+                ConnectionOpened?.Invoke(new TransportConnectionId(connection));
             }
         }
         else if (state is Steam.NetworkingConnectionState.ClosedByPeer or
                  Steam.NetworkingConnectionState.ProblemDetectedLocally)
         {
+            if (!_remoteSteamIds.ContainsKey(connection))
+            {
+                return;
+            }
+
             Steam.CloseConnection(connection, (int)Steam.NetworkingConnectionEnd.AppGeneric,
                 "Connection closed", linger: false);
             _remoteSteamIds.Remove(connection);
             if (_connectedConnections.Remove(connection))
             {
                 StatusChanged?.Invoke($"Steam connection {connection} closed");
-                PeerDisconnected?.Invoke(new NetworkPeerId(connection));
+                ConnectionClosed?.Invoke(new TransportConnectionId(connection));
             }
         }
     }
+
+    public bool TryGetRemoteSteamId(TransportConnectionId connectionId, out ulong steamId) =>
+        _remoteSteamIds.TryGetValue(checked((uint)connectionId.Value), out steamId);
 }

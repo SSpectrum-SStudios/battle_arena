@@ -2,6 +2,6 @@ namespace BattleArena.Multiplayer.Transport;
 
 public enum TransportDelivery
 {
-    UnreliableOrdered,
+    Unreliable,
     ReliableOrdered,
 }

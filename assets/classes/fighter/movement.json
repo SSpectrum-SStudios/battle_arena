@@ -1,0 +1,55 @@
+{
+  "schemaVersion": 1,
+  "id": "fighter.default",
+  "ground": {
+    "maximumRunSpeed": 6.0,
+    "maximumSprintSpeed": 12.5,
+    "runAcceleration": 16.0,
+    "sprintAcceleration": 14.0,
+    "brakingDeceleration": 32.0,
+    "reversalDeceleration": 42.0,
+    "lowSpeedTurnRateDegrees": 720.0,
+    "highSpeedTurnRateDegrees": 260.0,
+    "reversalDotThreshold": -0.25,
+    "maximumStepHeight": 0.4,
+    "floorSnapDistance": 0.5,
+    "maximumFloorAngleDegrees": 50.0,
+    "stepForwardAssistDistance": 0.08
+  },
+  "air": {
+    "forwardAirAcceleration": 23.5,
+    "lateralAirAcceleration": 3.5,
+    "maximumRunAirSpeed": 6.0,
+    "maximumAirSpeed": 12.5,
+    "highSpeedForwardControlMultiplier": 0.5,
+    "highSpeedLateralControlMultiplier": 0.15,
+    "turnRateDegrees": 180.0
+  },
+  "jump": {
+    "jumpVelocity": 13.4,
+    "jumpVelocityPerHorizontalSpeed": 0.04,
+    "risingGravity": 23.0,
+    "apexGravity": 16.0,
+    "fallingGravity": 45.0,
+    "maximumFallSpeed": 36.0,
+    "jumpReleaseGravity": 55.0,
+    "apexVelocityThreshold": 1.5,
+    "coyoteTimeSeconds": 0.12,
+    "inputBufferSeconds": 0.12
+  },
+  "crouchRoll": {
+    "rollEntrySpeed": 1.0,
+    "maximumCrouchSpeed": 3.0,
+    "minimumRollBoostDistance": 3.0,
+    "maximumRollBoostDistance": 5.0,
+    "minimumRollDurationSeconds": 0.32,
+    "maximumRollDurationSeconds": 0.85,
+    "rollCooldownSeconds": 0.35,
+    "lowSpeedSteeringRateDegrees": 420.0,
+    "highSpeedSteeringRateDegrees": 90.0,
+    "standingCapsuleHeight": 1.8,
+    "crouchingCapsuleHeight": 1.25,
+    "rollingCapsuleHeight": 0.95,
+    "capsuleRadius": 0.42
+  }
+}

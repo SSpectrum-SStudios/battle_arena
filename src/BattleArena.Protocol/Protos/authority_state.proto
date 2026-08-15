@@ -4,6 +4,7 @@ package battle_arena.protocol.v1;
 option csharp_namespace = "BattleArena.Protocol.V1";
 
 import "common.proto";
+import "client_commands.proto";
 
 message CombatantSnapshot {
   fixed64 combatant_id = 1;
@@ -19,6 +20,32 @@ message CombatantSnapshot {
   ReplicatedLifeState life_state = 11;
   uint64 last_processed_input_sequence = 12;
   bool is_grounded = 13;
+  ReplicatedLocomotionMode locomotion_mode = 14;
+  ReplicatedPostureMode posture_mode = 15;
+  ReplicatedMovementActionMode movement_action_mode = 16;
+  uint64 movement_mode_started_tick = 17;
+  ReplicatedJumpPhase jump_phase = 18;
+  uint64 last_grounded_tick = 19;
+  optional uint64 buffered_jump_until_tick = 20;
+  bool jump_cut_applied = 21;
+  Vector3Value roll_direction = 22;
+  float roll_entry_speed = 23;
+  float roll_boost_distance = 24;
+  uint64 roll_duration_ticks = 25;
+  uint64 roll_available_tick = 26;
+  bool landing_roll_queued = 27;
+  uint64 attack_execution_id = 28;
+  uint32 attack_step_index = 29;
+  bool attack_is_crouched_or_airborne = 30;
+  uint64 attack_started_tick = 31;
+  bool attack_continuation_queued = 32;
+  bool attack_released_during_step = 33;
+  string display_name = 34;
+  uint64 respawn_at_tick = 35;
+  float body_facing_yaw_radians = 36;
+  uint64 movement_profile_revision = 37;
+  uint64 movement_capability_revision = 38;
+  optional ReplicatedTraversalState traversal = 39;
 }
 
 message ActiveEffectSnapshot {
@@ -45,6 +72,46 @@ message WorldObjectSnapshot {
 message AuthoritySnapshot {
   repeated CombatantSnapshot combatants = 1;
   ReplicatedStateRevision revision = 2;
+  float measured_rtt_milliseconds = 3;
+  float measured_jitter_milliseconds = 4;
+  float rewind_allowance_milliseconds = 5;
+  bool lag_compensation_enabled = 6;
+  float last_requested_attack_age_milliseconds = 7;
+  float last_actual_rewind_milliseconds = 8;
+}
+
+message AuthoritativeMovementState {
+  fixed64 combatant_id = 1;
+  fixed64 life_id = 2;
+  Vector3Value position = 3;
+  Vector3Value velocity = 4;
+  float view_yaw_radians = 5;
+  float view_pitch_radians = 6;
+  float body_facing_yaw_radians = 7;
+  uint64 last_processed_input_sequence = 8;
+  bool is_grounded = 9;
+  ReplicatedLocomotionMode locomotion_mode = 10;
+  ReplicatedPostureMode posture_mode = 11;
+  ReplicatedMovementActionMode movement_action_mode = 12;
+  uint64 movement_mode_started_tick = 13;
+  ReplicatedJumpPhase jump_phase = 14;
+  uint64 last_grounded_tick = 15;
+  optional uint64 buffered_jump_until_tick = 16;
+  bool jump_cut_applied = 17;
+  Vector3Value roll_direction = 18;
+  float roll_entry_speed = 19;
+  float roll_boost_distance = 20;
+  uint64 roll_duration_ticks = 21;
+  uint64 roll_available_tick = 22;
+  bool landing_roll_queued = 23;
+  uint64 movement_profile_revision = 24;
+  uint64 movement_capability_revision = 25;
+  optional ReplicatedTraversalState traversal = 26;
+}
+
+message AuthorityMovementFrameBatch {
+  uint64 stream_sequence = 1;
+  repeated AuthoritativeMovementState combatants = 2;
 }
 
 message SpawnEvent {
@@ -61,6 +128,40 @@ message DamageEvent {
   fixed64 target_combatant_id = 3;
   int64 net_damage = 4;
   int64 overkill = 5;
+  int64 current_health = 6;
+  int64 maximum_health = 7;
+  fixed64 target_life_id = 8;
+}
+
+enum ReplicatedActionLifecycleKind {
+  REPLICATED_ACTION_LIFECYCLE_KIND_UNSPECIFIED = 0;
+  REPLICATED_ACTION_LIFECYCLE_KIND_STARTED = 1;
+  REPLICATED_ACTION_LIFECYCLE_KIND_PHASE_CHANGED = 2;
+  REPLICATED_ACTION_LIFECYCLE_KIND_COMPLETED = 3;
+  REPLICATED_ACTION_LIFECYCLE_KIND_CANCELLED = 4;
+  REPLICATED_ACTION_LIFECYCLE_KIND_INTERRUPTED = 5;
+}
+
+enum ReplicatedAttackPhase {
+  REPLICATED_ATTACK_PHASE_UNSPECIFIED = 0;
+  REPLICATED_ATTACK_PHASE_STARTUP = 1;
+  REPLICATED_ATTACK_PHASE_COMMITTED = 2;
+  REPLICATED_ATTACK_PHASE_RECOVERY = 3;
+  REPLICATED_ATTACK_PHASE_FINISHED = 4;
+}
+
+message ActionStateEvent {
+  fixed64 source_combatant_id = 1;
+  fixed64 source_life_id = 2;
+  uint64 attack_execution_id = 3;
+  uint32 attack_step_index = 4;
+  bool attack_is_crouched_or_airborne = 5;
+  uint64 attack_started_tick = 6;
+  ReplicatedActionLifecycleKind lifecycle = 7;
+  ReplicatedAttackPhase phase = 8;
+  uint64 phase_started_tick = 9;
+  string weapon_definition_id = 10;
+  uint64 attack_policy_revision = 11;
 }
 
 message EffectLifecycleEvent {
@@ -86,6 +187,7 @@ message AuthorityEvent {
     DamageEvent damage = 12;
     EffectLifecycleEvent effect_lifecycle = 13;
     LifeStateEvent life_state = 14;
+    ActionStateEvent action_state = 15;
   }
 }
 
@@ -98,4 +200,84 @@ message AuthorityCheckpoint {
   repeated CombatantSnapshot combatants = 2;
   repeated ActiveEffectSnapshot active_effects = 3;
   repeated WorldObjectSnapshot world_objects = 4;
+}
+
+// Protocol-next exact owner scheduling acknowledgement drafts. These messages
+// are intentionally absent from PacketEnvelope v1 until the coordinated
+// protocol bump. They report scheduling/journal outcomes only; the explicit
+// rewind character state they will eventually accompany is Phase 5 work.
+enum MovementTransitionOutcomeDraft {
+  MOVEMENT_TRANSITION_OUTCOME_DRAFT_UNSPECIFIED = 0;
+  MOVEMENT_TRANSITION_OUTCOME_DRAFT_ACCEPTED = 1;
+  MOVEMENT_TRANSITION_OUTCOME_DRAFT_REMAPPED = 2;
+  MOVEMENT_TRANSITION_OUTCOME_DRAFT_REJECTED = 3;
+  MOVEMENT_TRANSITION_OUTCOME_DRAFT_EXPIRED = 4;
+  MOVEMENT_TRANSITION_OUTCOME_DRAFT_SUPERSEDED = 5;
+}
+
+enum MovementTransitionRejectionReasonDraft {
+  MOVEMENT_TRANSITION_REJECTION_REASON_DRAFT_NONE = 0;
+  MOVEMENT_TRANSITION_REJECTION_REASON_DRAFT_AUTHORITY_POLICY_REJECTED = 1;
+  MOVEMENT_TRANSITION_REJECTION_REASON_DRAFT_INVALID_STATE = 2;
+  MOVEMENT_TRANSITION_REJECTION_REASON_DRAFT_CAPABILITY_UNAVAILABLE = 3;
+  MOVEMENT_TRANSITION_REJECTION_REASON_DRAFT_DEADLINE_EXPIRED = 4;
+  MOVEMENT_TRANSITION_REJECTION_REASON_DRAFT_SUPERSEDED = 5;
+}
+
+// Application/decision frame is deliberately not carried on the wire: it is
+// fully determined by outcome (accepted/remapped) plus decision_tick, and
+// duplicating it would let a malformed packet claim a frame that disagrees
+// with its own outcome.
+message MovementTransitionResolutionDraft {
+  uint64 resolution_sequence = 1;
+  uint64 transition_id = 2;
+  MovementTransitionOutcomeDraft outcome = 3;
+  uint64 decision_tick = 4;
+  MovementTransitionRejectionReasonDraft rejection_reason = 5;
+}
+
+enum PredictedActionOutcomeDraft {
+  PREDICTED_ACTION_OUTCOME_DRAFT_UNSPECIFIED = 0;
+  PREDICTED_ACTION_OUTCOME_DRAFT_ACCEPTED = 1;
+  PREDICTED_ACTION_OUTCOME_DRAFT_REMAPPED = 2;
+  PREDICTED_ACTION_OUTCOME_DRAFT_REJECTED = 3;
+  PREDICTED_ACTION_OUTCOME_DRAFT_EXPIRED = 4;
+  PREDICTED_ACTION_OUTCOME_DRAFT_SUPERSEDED = 5;
+}
+
+enum PredictedActionRejectionReasonDraft {
+  PREDICTED_ACTION_REJECTION_REASON_DRAFT_NONE = 0;
+  PREDICTED_ACTION_REJECTION_REASON_DRAFT_AUTHORITY_POLICY_REJECTED = 1;
+  PREDICTED_ACTION_REJECTION_REASON_DRAFT_INVALID_STATE = 2;
+  PREDICTED_ACTION_REJECTION_REASON_DRAFT_COOLDOWN_ACTIVE = 3;
+  PREDICTED_ACTION_REJECTION_REASON_DRAFT_CAPABILITY_UNAVAILABLE = 4;
+  PREDICTED_ACTION_REJECTION_REASON_DRAFT_DEADLINE_EXPIRED = 5;
+  PREDICTED_ACTION_REJECTION_REASON_DRAFT_SUPERSEDED = 6;
+}
+
+// Start frame is likewise omitted: it always equals decision_tick when an
+// authority execution is present, and is absent otherwise.
+message PredictedActionResolutionDraft {
+  uint64 resolution_sequence = 1;
+  uint64 action_id = 2;
+  PredictedActionOutcomeDraft outcome = 3;
+  optional uint64 authority_execution_id = 4;
+  uint64 decision_tick = 5;
+  PredictedActionRejectionReasonDraft rejection_reason = 6;
+}
+
+// One combatant's exact owner-scheduling acknowledgement. `applied_input`
+// reuses OwnerInputFrameDispositionDraft for the single frame this message
+// represents; OwnerInputConsumptionAcknowledgementDraft.recent_dispositions
+// carries the same message type for the bounded repair history.
+message AuthorityOwnerStateDraft {
+  OwnerPredictionScopeDraft scope = 1;
+  OwnerInputFrameDispositionDraft applied_input = 2;
+  OwnerInputReceiveAcknowledgementDraft received_inputs = 3;
+  OwnerInputConsumptionAcknowledgementDraft consumed_inputs = 4;
+  optional uint64 latest_transition_resolution_sequence = 5;
+  repeated MovementTransitionResolutionDraft transition_resolutions = 6;
+  optional uint64 latest_action_resolution_sequence = 7;
+  repeated PredictedActionResolutionDraft action_resolutions = 8;
+  OwnerPredictionLeadUpdateDraft lead_update = 9;
 }

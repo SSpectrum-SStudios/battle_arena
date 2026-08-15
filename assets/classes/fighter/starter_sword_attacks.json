@@ -1,0 +1,63 @@
+{
+  "schemaVersion": 1,
+  "id": "fighter.starter_sword",
+  "finisherInputWindowSeconds": 0.22,
+  "groundedCombo": [
+    {
+      "id": "light.1",
+      "animationId": "attack.light.1",
+      "startupSeconds": 0.12,
+      "committedSeconds": 0.16,
+      "recoverySeconds": 0.18,
+      "activeHitStartsSeconds": 0.12,
+      "activeHitEndsSeconds": 0.25,
+      "continuationWindowStartsSeconds": 0.22,
+      "physicalDamage": 20,
+      "lungeDistance": 0.7,
+      "movementAuthority": 0.6,
+      "additionalDeceleration": 3.0
+    },
+    {
+      "id": "light.2",
+      "animationId": "attack.light.2",
+      "startupSeconds": 0.10,
+      "committedSeconds": 0.16,
+      "recoverySeconds": 0.16,
+      "activeHitStartsSeconds": 0.10,
+      "activeHitEndsSeconds": 0.23,
+      "continuationWindowStartsSeconds": 0.20,
+      "physicalDamage": 20,
+      "lungeDistance": 0.8,
+      "movementAuthority": 0.6,
+      "additionalDeceleration": 3.0
+    },
+    {
+      "id": "light.3",
+      "animationId": "attack.light.3",
+      "startupSeconds": 0.16,
+      "committedSeconds": 0.20,
+      "recoverySeconds": 0.24,
+      "activeHitStartsSeconds": 0.16,
+      "activeHitEndsSeconds": 0.33,
+      "continuationWindowStartsSeconds": 0.60,
+      "physicalDamage": 30,
+      "lungeDistance": 1.1,
+      "movementAuthority": 0.4,
+      "additionalDeceleration": 3.0
+    }
+  ],
+  "crouchedOrAirborne": {
+    "id": "simple",
+    "animationId": "attack.simple",
+    "startupSeconds": 0.14,
+    "committedSeconds": 0.18,
+    "recoverySeconds": 0.22,
+    "activeHitStartsSeconds": 0.14,
+    "activeHitEndsSeconds": 0.29,
+    "continuationWindowStartsSeconds": 0.54,
+    "physicalDamage": 20,
+    "lungeDistance": 0.0,
+    "movementAuthority": 1.0,
+    "additionalDeceleration": 0.0
+  }
+}

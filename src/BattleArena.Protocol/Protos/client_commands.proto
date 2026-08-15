@@ -13,10 +13,16 @@ message ClientInputFrame {
   float view_yaw_radians = 5;
   float view_pitch_radians = 6;
   uint32 button_bits = 7;
+  uint32 pressed_button_bits = 8;
+  uint32 released_button_bits = 9;
+  uint64 estimated_authority_tick = 10;
+  uint64 movement_profile_revision = 11;
+  uint64 movement_capability_revision = 12;
 }
 
 message ClientInputBatch {
   repeated ClientInputFrame frames = 1;
+  uint64 latest_authority_sequence = 2;
 }
 
 message ClientActionRequest {
@@ -24,4 +30,100 @@ message ClientActionRequest {
   uint64 client_tick = 2;
   ClientActionKind kind = 3;
   uint32 equipment_slot = 4;
+  fixed64 source_life_id = 5;
+}
+
+// Protocol-next owner command draft. These messages are intentionally absent
+// from PacketEnvelope v1 until the coordinated protocol bump.
+message OwnerSimulationCommandDraft {
+  uint64 target_simulation_tick = 1;
+  uint64 input_sequence = 2;
+  sint32 move_x_q15 = 3;
+  sint32 move_z_q15 = 4;
+  uint32 view_yaw_u16 = 5;
+  sint32 view_pitch_i16 = 6;
+  uint32 held_movement_bits = 7;
+  uint32 held_combat_bits = 8;
+  repeated uint64 transition_references = 9 [packed = true];
+  repeated uint64 action_references = 10 [packed = true];
+  uint64 movement_profile_revision = 11;
+  uint64 movement_capability_revision = 12;
+}
+
+message MovementTransitionIntentDraft {
+  uint64 transition_id = 1;
+  uint64 originating_input_sequence = 2;
+  OwnerMovementTransitionKindDraft kind = 3;
+  uint64 first_predicted_tick = 4;
+  uint64 last_valid_tick = 5;
+}
+
+message PredictedActionIntentDraft {
+  uint64 action_id = 1;
+  uint64 originating_input_sequence = 2;
+  OwnerActionTriggerDraft trigger = 3;
+  uint64 predicted_start_tick = 4;
+  uint64 last_valid_start_tick = 5;
+  uint64 rendered_authority_tick = 6;
+}
+
+message OwnerCommandBatchDraft {
+  OwnerPredictionScopeDraft scope = 1;
+  uint64 packet_sequence = 2;
+  repeated OwnerSimulationCommandDraft commands = 3;
+  repeated MovementTransitionIntentDraft outstanding_transitions = 4;
+  repeated PredictedActionIntentDraft outstanding_actions = 5;
+  optional uint64 transition_resolution_cursor_applied = 6;
+  optional uint64 action_resolution_cursor_applied = 7;
+  uint64 latest_authority_frame_observed = 8;
+  uint64 latest_authority_stream_sequence_observed = 9;
+}
+
+message OwnerInputReceiveAcknowledgementDraft {
+  OwnerPredictionScopeDraft scope = 1;
+  SelectiveSequenceAcknowledgementDraft received_inputs = 2;
+}
+
+message OwnerInputFrameDispositionDraft {
+  uint64 target_simulation_tick = 1;
+  optional uint64 input_sequence = 2;
+  OwnerInputFrameDispositionKindDraft kind = 3;
+}
+
+message OwnerInputConsumptionAcknowledgementDraft {
+  OwnerPredictionScopeDraft scope = 1;
+  optional uint64 consumed_through_simulation_tick = 2;
+  repeated OwnerInputFrameDispositionDraft recent_dispositions = 3;
+}
+
+message OwnerPredictionBootstrapPlanDraft {
+  uint64 plan_id = 1;
+  OwnerPredictionScopeDraft scope = 2;
+  OwnerPredictionBootstrapKindDraft kind = 3;
+  OwnerPredictionBaselinePreparationDraft preparation = 4;
+  uint64 published_authority_tick = 5;
+  uint64 baseline_tick = 6;
+  uint64 local_input_enable_tick = 7;
+  uint64 first_command_target_tick = 8;
+  uint32 target_lead_frames = 9;
+  uint64 lead_policy_revision = 10;
+  uint32 simulation_ticks_per_second = 11;
+  uint64 authority_frame_boundary_timestamp_microseconds = 12;
+  uint64 movement_profile_revision = 13;
+  uint64 movement_capability_revision = 14;
+  bytes collision_content_hash = 15;
+}
+
+message OwnerPredictionBaselineReceiptDraft {
+  uint64 plan_id = 1;
+  OwnerPredictionScopeDraft scope = 2;
+  uint64 baseline_tick = 3;
+  OwnerPredictionBaselineSourceDraft source = 4;
+}
+
+message OwnerPredictionLeadUpdateDraft {
+  OwnerPredictionScopeDraft scope = 1;
+  uint32 target_lead_frames = 2;
+  uint64 lead_policy_revision = 3;
+  uint64 effective_tick = 4;
 }

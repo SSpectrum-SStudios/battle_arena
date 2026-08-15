@@ -6,6 +6,10 @@ option csharp_namespace = "BattleArena.Protocol.V1";
 import "client_commands.proto";
 import "authority_state.proto";
 import "connection.proto";
+import "timing.proto";
+import "movement_relay.proto";
+import "prediction_mesh.proto";
+import "movement_configuration.proto";
 
 message PacketEnvelope {
   uint32 protocol_version = 1;
@@ -19,10 +23,20 @@ message PacketEnvelope {
     AuthoritySnapshot authority_snapshot = 20;
     AuthorityEventBatch authority_event_batch = 21;
     AuthorityCheckpoint authority_checkpoint = 22;
+    AuthorityMovementFrameBatch authority_movement_frame_batch = 23;
+    AuthorityAcceptedMovementBatch authority_accepted_movement_batch = 24;
     JoinRequest join_request = 30;
     JoinAccepted join_accepted = 31;
     ReconnectRequest reconnect_request = 32;
     StateBaseline state_baseline = 33;
     MatchStart match_start = 34;
+    ClockSyncProbe clock_sync_probe = 40;
+    ClockSyncReply clock_sync_reply = 41;
+    MovementPredictionBundle movement_prediction_bundle = 42;
+    PredictionRouteAdvertisement prediction_route_advertisement = 43;
+    PeerRosterUpdate peer_roster_update = 44;
+    PredictionRouteAuthorization prediction_route_authorization = 45;
+    PredictionRouteRevoked prediction_route_revoked = 46;
+    AuthorityMovementConfigurationBatch authority_movement_configuration_batch = 47;
   }
 }

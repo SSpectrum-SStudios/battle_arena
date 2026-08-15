@@ -4,9 +4,11 @@ public interface INetworkTransport
 {
     event Action<InboundTransportPacket>? PacketReceived;
 
-    event Action<NetworkPeerId>? PeerConnected;
+    event Action<TransportConnectionId>? ConnectionOpened;
 
-    event Action<NetworkPeerId>? PeerDisconnected;
+    event Action<TransportConnectionId>? ConnectionClosed;
+
+    TransportKind Kind { get; }
 
     void Send(OutboundTransportPacket packet);
 }

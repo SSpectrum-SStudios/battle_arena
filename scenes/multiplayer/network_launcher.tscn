@@ -1,8 +1,10 @@
-[gd_scene load_steps=6 format=3]
+[gd_scene load_steps=8 format=3]
 
 [ext_resource type="Script" path="res://scripts/multiplayer/NetworkLauncher.cs" id="1_launcher"]
 [ext_resource type="Script" path="res://scripts/multiplayer/GodotEnetTransport.cs" id="2_transport"]
+[ext_resource type="Script" path="res://scripts/multiplayer/GodotEnetPredictionMeshTransport.cs" id="2_prediction_transport"]
 [ext_resource type="Script" path="res://scripts/multiplayer/GodotSteamSocketsTransport.cs" id="3_steam_transport"]
+[ext_resource type="Script" path="res://scripts/multiplayer/GodotSteamPredictionMeshTransport.cs" id="3_steam_prediction_transport"]
 [ext_resource type="Script" path="res://scripts/multiplayer/SteamRuntimeAdapter.cs" id="4_steam_runtime"]
 
 [sub_resource type="StyleBoxFlat" id="StyleBox_panel"]
@@ -25,8 +27,14 @@ script = ExtResource("1_launcher")
 [node name="EnetTransport" type="Node" parent="."]
 script = ExtResource("2_transport")
 
+[node name="EnetPredictionTransport" type="Node" parent="."]
+script = ExtResource("2_prediction_transport")
+
 [node name="SteamTransport" type="Node" parent="."]
 script = ExtResource("3_steam_transport")
+
+[node name="SteamPredictionTransport" type="Node" parent="."]
+script = ExtResource("3_steam_prediction_transport")
 
 [node name="SteamRuntime" type="Node" parent="."]
 script = ExtResource("4_steam_runtime")

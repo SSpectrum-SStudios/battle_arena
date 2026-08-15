@@ -1,7 +1,7 @@
 namespace BattleArena.Multiplayer.Transport;
 
 public readonly record struct OutboundTransportPacket(
-    NetworkPeerId Recipient,
+    TransportConnectionId Recipient,
     TransportChannel Channel,
     TransportDelivery Delivery,
     ReadOnlyMemory<byte> Payload);

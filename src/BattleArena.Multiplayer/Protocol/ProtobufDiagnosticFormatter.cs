@@ -20,6 +20,11 @@ public sealed class ProtobufDiagnosticFormatter : IProtocolDiagnosticFormatter
             safeCopy.ReconnectRequest.ReconnectToken = ByteString.Empty;
         }
 
+        if (safeCopy.PredictionRouteAuthorization is not null)
+        {
+            safeCopy.PredictionRouteAuthorization.RouteCredential = ByteString.Empty;
+        }
+
         return JsonFormatter.Default.Format(safeCopy);
     }
 }

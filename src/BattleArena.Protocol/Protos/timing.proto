@@ -1,0 +1,17 @@
+syntax = "proto3";
+
+package battle_arena.protocol.v1;
+option csharp_namespace = "BattleArena.Protocol.V1";
+
+message ClockSyncProbe {
+  uint64 probe_sequence = 1;
+  fixed64 client_send_timestamp_microseconds = 2;
+}
+
+message ClockSyncReply {
+  uint64 probe_sequence = 1;
+  fixed64 client_send_timestamp_microseconds = 2;
+  fixed64 authority_receive_timestamp_microseconds = 3;
+  fixed64 authority_send_timestamp_microseconds = 4;
+  uint64 authority_tick = 5;
+}
