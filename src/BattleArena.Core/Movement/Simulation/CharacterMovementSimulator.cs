@@ -14,9 +14,9 @@ namespace BattleArena.Core.Movement.Simulation;
 /// number.
 /// </para>
 /// <para>
-/// Order within the frame is fixed — sources are added, then expired, then
-/// aggregated — so a source that starts and ends on the same frame behaves
-/// identically on first run and replay.
+/// Order within the frame is fixed — sources are expired, then aggregated — so a
+/// source that starts and ends on the same frame behaves identically on first
+/// run and replay.
 /// </para>
 /// </remarks>
 public sealed class MovementSourceSimulator
@@ -26,21 +26,29 @@ public sealed class MovementSourceSimulator
     /// contribution to fold into locomotion.
     /// </summary>
     /// <remarks>
+    /// <para>
     /// Expiry runs before aggregation so a source ending on this frame does not
     /// contribute to it, which is what makes a lunge's final frame consistent
     /// whether it is simulated once or replayed ten times.
-    /// </remarks>
-    /// <remarks>
+    /// </para>
+    /// <para>
     /// The returned contribution is applied to the frame's DISPLACEMENT only and
     /// is never written back into the persisted velocity. Persisting it would
     /// double-count: the next frame re-evaluates the same source's curve and
     /// would add it on top of the copy already folded into velocity, so a lunge
     /// would accelerate every frame instead of following its authored falloff.
     /// Only the motor's collision-resolved velocity is persisted.
+    /// </para>
     /// </remarks>
     public (MovementSourceBuffer Sources, HorizontalVector Horizontal, double Vertical) Advance(
         in MovementSourceBuffer sources,
-        SimulationInstant frame) => throw new NotImplementedException();
+        SimulationInstant frame)
+    {
+        var advanced = sources;
+        advanced.RemoveExpired(frame);
+        var (horizontal, vertical) = advanced.Aggregate(frame);
+        return (advanced, horizontal, vertical);
+    }
 
     /// <summary>
     /// Starts a source on an exact frame, replacing any existing source with the
@@ -55,7 +63,53 @@ public sealed class MovementSourceSimulator
     /// </remarks>
     public MovementSourceBuffer Start(
         in MovementSourceBuffer sources,
-        in MovementSourceState source) => throw new NotImplementedException();
+        in MovementSourceState source)
+    {
+        var started = sources;
+        started.TryAddOrReplace(source);
+        return started;
+    }
+}
+
+/// <summary>
+/// One simulated frame: the new state, plus what the motor did to produce it.
+/// </summary>
+/// <remarks>
+/// The diagnostics are not optional colour. The golden suite asserts on step
+/// rejection, slide iteration counts, and ceiling blocking; the dual-motor test
+/// arena reports the active motor; and Phase 6 reconciliation needs the per-frame
+/// outcome to explain a correction. Returning only the state would leave all of
+/// them with nothing to assert on but position.
+/// </remarks>
+public readonly record struct CharacterFrameResult
+{
+    internal CharacterFrameResult(
+        CharacterSimulationState state,
+        CapsuleMotionOutcome outcome,
+        int slideIterations,
+        bool ceilingBlocked,
+        bool profileExpansionBlocked)
+    {
+        State = state;
+        Outcome = outcome;
+        SlideIterations = slideIterations;
+        CeilingBlocked = ceilingBlocked;
+        ProfileExpansionBlocked = profileExpansionBlocked;
+    }
+
+    public CharacterSimulationState State { get; }
+    public CapsuleMotionOutcome Outcome { get; }
+    public int SlideIterations { get; }
+    public bool CeilingBlocked { get; }
+
+    /// <summary>Whether a pending stand was refused by clearance this frame.</summary>
+    public bool ProfileExpansionBlocked { get; }
+
+    /// <summary>
+    /// Whether this frame ended in a state the caller must repair rather than
+    /// continue from.
+    /// </summary>
+    public bool RequiresRepair => Outcome is CapsuleMotionOutcome.UnrecoverablePenetration;
 }
 
 /// <summary>
@@ -93,12 +147,30 @@ public sealed class MovementSourceSimulator
 /// rather than passing through a wall, and ground snap is suppressed while
 /// rising so a jump is not pulled straight back down.
 /// </para>
+/// <para>
+/// This ordering mirrors the accepted Godot driver exactly — crouch/roll first,
+/// then the crouch command adjustments, then jump/fall, then ground or air —
+/// because that order is the accepted feel, not an implementation detail.
+/// </para>
 /// </remarks>
 public sealed class CharacterMovementSimulator
 {
+    private readonly CapsuleMovementSimulator _capsule;
+    private readonly MovementSourceSimulator _sources;
+    private readonly GroundLocomotionSimulator _ground = new();
+    private readonly AirborneLocomotionSimulator _air = new();
+    private readonly JumpFallSimulator _jumpFall = new();
+    private readonly CrouchRollSimulator _crouchRoll = new();
+
     public CharacterMovementSimulator(
         CapsuleMovementSimulator capsule,
-        MovementSourceSimulator sources) => throw new NotImplementedException();
+        MovementSourceSimulator sources)
+    {
+        ArgumentNullException.ThrowIfNull(capsule);
+        ArgumentNullException.ThrowIfNull(sources);
+        _capsule = capsule;
+        _sources = sources;
+    }
 
     /// <summary>
     /// Simulates one complete frame for one character.
@@ -124,7 +196,79 @@ public sealed class CharacterMovementSimulator
         ReadOnlySpan<MovementTransitionKindTag> appliedTransitions,
         in SimulationStepContext context,
         MovementAttributeSnapshot attributes,
-        MovementCapabilitySnapshot capabilities) => throw new NotImplementedException();
+        MovementCapabilitySnapshot capabilities)
+    {
+        ArgumentNullException.ThrowIfNull(attributes);
+        ArgumentNullException.ThrowIfNull(capabilities);
+        if (!state.IsValid)
+        {
+            throw new ArgumentOutOfRangeException(nameof(state));
+        }
+
+        var profiles = CollisionProfileTable.FromAttributes(attributes);
+        var policy = CapsuleMotorPolicy.FromAttributes(attributes);
+        var frame = context.Frame;
+        var previousFrame = state.Frame;
+        var command = OwnerInputEdgeMapper.ToMovementCommand(input, appliedTransitions, frame);
+
+        // 1. Clearance is probed before the rules, because the crouch/roll rules
+        // need to know whether standing is possible in order to decide.
+        var canStand = ProbeStandingClearance(state, profiles);
+
+        // 2. Crouch/roll rules. Their output is the profile intent.
+        var runtime = _crouchRoll.Simulate(
+            state.ToRuntimeState(),
+            command,
+            state.Kinematic.IsGrounded,
+            canStand,
+            attributes.CrouchRoll,
+            attributes.Jump,
+            attributes.Ground,
+            context.Rate);
+        var working = state.WithRuntimeState(runtime);
+
+        // 3. Commit the profile the rules asked for, so the capsule that is
+        // swept is the capsule that is committed.
+        working = CommitProfile(working, canStand, profiles);
+        var expansionBlocked = working.Profile.HasPendingExpansion(profiles);
+
+        // 4. Locomotion rules, including the accepted crouch input adjustments.
+        runtime = ApplyLocomotionRules(
+            working, command, canStand, context, attributes, capabilities,
+            InfluenceFor(working.Action, attributes));
+        working = working.WithRuntimeState(runtime);
+
+        // 5. External movement sources contribute to displacement only.
+        var (sources, sourceHorizontal, sourceVertical) =
+            _sources.Advance(working.MovementSources, frame);
+        working = working.WithMovementSources(sources);
+
+        // 6. Move the capsule. Velocity is per second; the frame integrates one
+        // tick of it, plus the sources' contribution for this frame.
+        var seconds = (double)context.StepSeconds;
+        var horizontalMotion =
+            (working.Kinematic.HorizontalVelocity + sourceHorizontal) * seconds;
+        var verticalMotion =
+            (working.Kinematic.VerticalVelocity + sourceVertical) * seconds;
+        var motion = _capsule.Move(
+            working.Kinematic,
+            working.Profile,
+            horizontalMotion,
+            verticalMotion,
+            previousFrame,
+            frame,
+            profiles,
+            policy);
+
+        // 7. Settle grounding and mode from what the motor actually found.
+        var settled = SettleGrounding(working, motion, frame);
+        return new CharacterFrameResult(
+            settled.WithFrame(frame),
+            motion.Outcome,
+            motion.SlideIterations,
+            motion.CeilingBlocked,
+            expansionBlocked);
+    }
 
     /// <summary>
     /// Probes whether the standing capsule fits at the current position.
@@ -135,8 +279,15 @@ public sealed class CharacterMovementSimulator
     /// probed before them and passed in, rather than being discovered after the
     /// decision has already been made.
     /// </returns>
-    internal bool ProbeStandingClearance(in CharacterSimulationState state) =>
-        throw new NotImplementedException();
+    internal bool ProbeStandingClearance(
+        in CharacterSimulationState state,
+        CollisionProfileTable profiles) =>
+        state.Profile.Current == CollisionProfileKind.Standing ||
+        _capsule.CanExpandProfile(
+            state.Kinematic,
+            state.Profile.Current,
+            CollisionProfileKind.Standing,
+            profiles);
 
     /// <summary>
     /// Commits the profile the crouch/roll rules asked for, applying a pending
@@ -149,7 +300,24 @@ public sealed class CharacterMovementSimulator
     internal CharacterSimulationState CommitProfile(
         in CharacterSimulationState state,
         bool canStand,
-        CollisionProfileTable profiles) => throw new NotImplementedException();
+        CollisionProfileTable profiles)
+    {
+        var desired = state.LocomotionMode == LocomotionMode.Rolling
+            ? CollisionProfileKind.Rolling
+            : state.PostureMode == PostureMode.Crouched
+                ? CollisionProfileKind.Crouching
+                : CollisionProfileKind.Standing;
+
+        var requested = state.Profile.WithDesired(desired, profiles);
+        if (requested.HasPendingExpansion(profiles) &&
+            _capsule.CanExpandProfile(
+                state.Kinematic, requested.Current, requested.Desired, profiles))
+        {
+            requested = requested.ExpandToDesired();
+        }
+
+        return state.WithProfile(requested);
+    }
 
     /// <summary>
     /// Runs the accepted ground or airborne rule set for this frame, producing
@@ -169,7 +337,34 @@ public sealed class CharacterMovementSimulator
         in SimulationStepContext context,
         MovementAttributeSnapshot attributes,
         MovementCapabilitySnapshot capabilities,
-        MovementInfluence? influence) => throw new NotImplementedException();
+        MovementInfluence? influence)
+    {
+        var runtime = state.ToRuntimeState();
+
+        // Rolling is not cancellable and does not take further locomotion rules;
+        // it integrates on the velocity the roll established.
+        if (runtime.LocomotionMode == LocomotionMode.Rolling)
+        {
+            return runtime;
+        }
+
+        var adjusted = command;
+        if (runtime.PostureMode == PostureMode.Crouched)
+        {
+            adjusted = AsCrouchCommand(command, attributes);
+            if (!canStand)
+            {
+                adjusted = WithoutJump(adjusted);
+            }
+        }
+
+        runtime = _jumpFall.Simulate(
+            runtime, adjusted, state.Kinematic.IsGrounded, attributes.Jump, context.Rate);
+
+        return runtime.LocomotionMode == LocomotionMode.Grounded
+            ? _ground.Simulate(runtime, adjusted, attributes.Ground, context.Rate, influence)
+            : _air.Simulate(runtime, adjusted, attributes.Air, context.Rate);
+    }
 
     /// <summary>
     /// Selects the movement influence the active attack step imposes this frame.
@@ -182,59 +377,110 @@ public sealed class CharacterMovementSimulator
     /// </remarks>
     internal MovementInfluence? InfluenceFor(
         in CharacterActionState action,
-        MovementAttributeSnapshot attributes) => throw new NotImplementedException();
+        MovementAttributeSnapshot attributes) =>
+        // The authored attack policy that maps a step index to an influence is
+        // combat content and arrives with Phase 8. Until then an inactive action
+        // imposes nothing, which matches the current driver whenever no attack
+        // step is running.
+        action.IsActive ? null : null;
 
     /// <summary>
     /// Reconciles locomotion mode with what the motor actually found underfoot.
     /// </summary>
     /// <remarks>
+    /// <para>
     /// The rule simulators decide mode from the state they were given; the motor
     /// then discovers whether the character is really supported. Landing and
     /// leaving a ledge are both detected here, which is why coyote time and
     /// buffered jumps read <see cref="CharacterKinematicState.IsGrounded"/> after
     /// this rather than before.
-    /// </remarks>
-    /// <remarks>
+    /// </para>
+    /// <para>
     /// Folds back the motor's collision-resolved velocity. The movement-source
     /// contribution is deliberately not re-captured here; see
     /// <see cref="MovementSourceSimulator.Advance"/>.
+    /// </para>
     /// </remarks>
     internal CharacterSimulationState SettleGrounding(
         in CharacterSimulationState state,
         in CapsuleMotionResult motion,
-        SimulationInstant frame) => throw new NotImplementedException();
-}
+        SimulationInstant frame)
+    {
+        var kinematic = motion.State;
 
-/// <summary>
-/// One simulated frame: the new state, plus what the motor did to produce it.
-/// </summary>
-/// <remarks>
-/// The diagnostics are not optional colour. The golden suite asserts on step
-/// rejection, slide iteration counts, and ceiling blocking; the dual-motor test
-/// arena reports the active motor; and Phase 6 reconciliation needs the per-frame
-/// outcome to explain a correction. Returning only the state would leave all of
-/// them with nothing to assert on but position.
-/// </remarks>
-public readonly record struct CharacterFrameResult
-{
-    internal CharacterFrameResult(
-        CharacterSimulationState state,
-        CapsuleMotionOutcome outcome,
-        int slideIterations,
-        bool ceilingBlocked,
-        bool profileExpansionBlocked) => throw new NotImplementedException();
+        // A ceiling cancels a rise rather than leaving the character pinned
+        // against it for the rest of the ascent.
+        if (motion.CeilingBlocked && kinematic.VerticalVelocity > 0d)
+        {
+            kinematic = kinematic.WithVelocity(kinematic.HorizontalVelocity, 0d);
+        }
 
-    public CharacterSimulationState State { get; }
-    public CapsuleMotionOutcome Outcome { get; }
-    public int SlideIterations { get; }
-    public bool CeilingBlocked { get; }
+        var settled = state.WithKinematic(kinematic);
+        var landed = kinematic.IsGrounded && state.LocomotionMode == LocomotionMode.Airborne;
+        var left = !kinematic.IsGrounded && state.LocomotionMode == LocomotionMode.Grounded;
 
-    /// <summary>Whether a pending stand was refused by clearance this frame.</summary>
-    public bool ProfileExpansionBlocked { get; }
+        if (landed)
+        {
+            settled = settled with
+            {
+                LocomotionMode = LocomotionMode.Grounded,
+                JumpPhase = JumpPhase.None,
+                JumpCutApplied = false,
+                LastGroundedAt = frame,
+                ModeStartedAt = frame,
+                Counters = settled.Counters.ResetOnGrounded(),
+            };
+        }
+        else if (left)
+        {
+            settled = settled with
+            {
+                LocomotionMode = LocomotionMode.Airborne,
+                ModeStartedAt = frame,
+            };
+        }
+        else if (kinematic.IsGrounded)
+        {
+            settled = settled with { LastGroundedAt = frame };
+        }
+
+        return settled;
+    }
 
     /// <summary>
-    /// Whether this frame ended in a state the caller must repair rather than
-    /// continue from.
+    /// The accepted crouch input adjustment: movement scaled to the crouch speed
+    /// ratio, and sprint stripped.
     /// </summary>
-    public bool RequiresRepair => throw new NotImplementedException();
+    /// <remarks>
+    /// Mirrors the accepted driver exactly, including that sprint is stripped
+    /// from the held mask only and not from the edges. Changing that would change
+    /// accepted feel, so it is copied rather than tidied.
+    /// </remarks>
+    private static MovementCommand AsCrouchCommand(
+        in MovementCommand command,
+        MovementAttributeSnapshot attributes)
+    {
+        var ratio = attributes.Ground.MaximumRunSpeed > 0d
+            ? attributes.CrouchRoll.MaximumCrouchSpeed / attributes.Ground.MaximumRunSpeed
+            : 1d;
+        return new MovementCommand(
+            command.Sequence,
+            command.ClientTick,
+            command.Movement * ratio,
+            command.ViewYawRadians,
+            command.ViewPitchRadians,
+            command.HeldButtons & ~MovementButtons.Sprint,
+            command.PressedButtons,
+            command.ReleasedButtons);
+    }
+
+    private static MovementCommand WithoutJump(in MovementCommand command) => new(
+        command.Sequence,
+        command.ClientTick,
+        command.Movement,
+        command.ViewYawRadians,
+        command.ViewPitchRadians,
+        command.HeldButtons & ~MovementButtons.Jump,
+        command.PressedButtons & ~MovementButtons.Jump,
+        command.ReleasedButtons & ~MovementButtons.Jump);
 }

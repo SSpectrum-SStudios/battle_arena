@@ -1360,7 +1360,7 @@ be met by a static-only world and belongs with Phase 9 frame-aligned collision.
     and forced-expansion policy pass.
 
 - [ ] **P05-12 — Compose ground and airborne locomotion.**
-  - Status: **Stubs Reviewed**.
+  - Status: **Implemented**.
   - Purpose: Reuse accepted acceleration, run/sprint, momentum, air-control, and
     falling rules through the explicit motor.
   - Target files: `CharacterMovementSimulator.cs`,
@@ -1368,7 +1368,7 @@ be met by a static-only world and belongs with Phase 9 frame-aligned collision.
   - Verification: Existing movement golden curves match accepted tolerances.
 
 - [ ] **P05-13 — Integrate jump state and durable transitions.**
-  - Status: **Stubs Reviewed**.
+  - Status: **Implemented**.
   - Purpose: Preserve variable hold, coyote, buffering, apex, fast fall, momentum,
     lateral control, and air sprint under restore/replay.
   - Target files: `CharacterMovementSimulator.cs`,
@@ -1377,7 +1377,7 @@ be met by a static-only world and belongs with Phase 9 frame-aligned collision.
     canonical state.
 
 - [ ] **P05-14 — Integrate crouch and roll state.**
-  - Status: **Stubs Reviewed**.
+  - Status: **Implemented**.
   - Purpose: Preserve hold-to-crouch, moving roll, tap/hold duration, momentum,
     steering, cooldown, landing roll, and non-cancelability.
   - Target files: `CharacterMovementSimulator.cs`,
@@ -1385,7 +1385,7 @@ be met by a static-only world and belongs with Phase 9 frame-aligned collision.
   - Verification: Restore/replay and accepted roll-distance/timing traces pass.
 
 - [ ] **P05-15 — Integrate replayable external movement sources.**
-  - Status: **Stubs Reviewed**.
+  - Status: **Implemented**.
   - Purpose: Apply source curves in the canonical frame order instead of mutating
     node velocity once.
   - Target files: `MovementSourceSimulator.cs`,

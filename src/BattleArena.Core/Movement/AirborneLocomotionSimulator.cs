@@ -10,7 +10,6 @@ public sealed class AirborneLocomotionSimulator
         AirMovementAttributes attributes,
         SimulationRate simulationRate)
     {
-        ArgumentNullException.ThrowIfNull(state);
         ArgumentNullException.ThrowIfNull(attributes);
         if (state.LocomotionMode != LocomotionMode.Airborne)
         {

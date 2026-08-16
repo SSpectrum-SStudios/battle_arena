@@ -11,7 +11,6 @@ public sealed class JumpFallSimulator
         JumpMovementAttributes attributes,
         SimulationRate simulationRate)
     {
-        ArgumentNullException.ThrowIfNull(state);
         ArgumentNullException.ThrowIfNull(attributes);
 
         var now = command.ClientTick;

@@ -16,7 +16,6 @@ public sealed class CrouchRollSimulator
         GroundMovementAttributes groundAttributes,
         SimulationRate simulationRate)
     {
-        ArgumentNullException.ThrowIfNull(state);
         ArgumentNullException.ThrowIfNull(attributes);
         ArgumentNullException.ThrowIfNull(jumpAttributes);
         ArgumentNullException.ThrowIfNull(groundAttributes);

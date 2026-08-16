@@ -11,7 +11,6 @@ public sealed class GroundLocomotionSimulator
         SimulationRate simulationRate,
         MovementInfluence? influence = null)
     {
-        ArgumentNullException.ThrowIfNull(state);
         ArgumentNullException.ThrowIfNull(attributes);
 
         if (state.LocomotionMode != LocomotionMode.Grounded)
