@@ -1143,7 +1143,127 @@ The active step is the first unchecked item whose prerequisites are complete.
 
 ## Phase 5 — Explicit-State Kinematic Motor
 
+### Phase plan (recorded August 15, 2026, before any code)
+
+**What is actually being replaced.** Today `MovementRuntimeState` holds velocity,
+facing, and mode/jump/roll state, while *position and all collision* live on the
+Godot `CharacterBody3D` and are resolved by `MoveAndSlide`. That split is why
+owner prediction cannot replay: half the state is inside an engine node that
+only moves when the node moves. Phase 5 moves position, contacts, collision
+profile, and external movement sources into replayable value state, and replaces
+`MoveAndSlide` with an explicit capsule motor driven from that state.
+
+**What is deliberately preserved.** The accepted *feel* — acceleration curves,
+run/sprint, air control, jump hold/coyote/buffer/apex/fast-fall, roll distance
+and timing — already lives in `GroundLocomotionSimulator`,
+`AirborneLocomotionSimulator`, `JumpFallSimulator`, and `CrouchRollSimulator`.
+Phase 5 reuses those rules and changes only how the resulting motion is
+integrated against the world. P05-12 through P05-15 are compositions, not
+rewrites, and their gate is that existing golden curves still match.
+
+**Layering.**
+
+1. *Value state* (P05-01..04, `BattleArena.Core`, no engine dependency). All
+   value structs rather than the current `sealed record`, because replay copies
+   them every frame and per-frame allocation is what the Phase 1 probes bound.
+   - `CharacterKinematicState` — position, velocity, facing, grounded, ground
+     normal, support identity.
+   - `CollisionContactState` — one stable contact fact; ordering key for
+     deterministic slide resolution.
+   - `CollisionProfileState` — standing/crouching/rolling by stable identity and
+     validated capsule dimensions.
+   - `MovementSourceState` + `MovementSourceBuffer` — fixed-capacity replayable
+     lunge/roll/dash/knockback/pull curves.
+   - `CharacterSimulationState` — the complete rewind unit composing all of the
+     above plus the existing mode/jump/roll fields and deterministic counters.
+     Authority-only hit and damage state is structurally excluded.
+2. *Collision contracts* (P05-05..06).
+   - `ICharacterCollisionWorld` — sweep, ground probe, clearance, support
+     motion, all taking an explicit transform. No node movement, no
+     presentation.
+   - `CharacterCollisionContracts` — request/result values and a deterministic
+     fake world for tests.
+   - `GodotKinematicCollisionWorld` — the adapter, built on the precreated
+     profile RIDs and static-only masks the P01-09 probe already proved feasible
+     at ~10.8 microseconds per query.
+3. *Capsule motor* (P05-07..11, `CapsuleMovementSimulator`). Sweep and
+   penetration recovery, stable slide resolution, slope classification and
+   ground snap, explicit stair/step solving, ceiling and profile clearance.
+   Ordering is stable by fraction, then collider, then shape, then normal, so
+   the result never depends on engine iteration order.
+4. *Locomotion composition* (P05-12..15, `CharacterMovementSimulator`). Drives
+   the existing rule simulators through the explicit motor, then applies
+   external movement sources in canonical frame order.
+5. *Harness* (P05-16..17). Dual-motor switch in the offline movement arena, and
+   a golden suite covering the full course plus 10,000-frame restore/replay
+   reproducibility.
+
+**Ordering constraint.** Groups 2-5 all depend on group 1's types, so P05-01..04
+is stubbed first and the rest follow. Within the phase the stub pass is one
+sweep, then a single stub critic, then implementation.
+
+
+### Stub review outcome (one critic over the whole phase)
+
+Six blockers and fourteen majors, all contract-level and all cheap to fix before
+implementation. The most consequential:
+
+- **The composition could not drive the accepted rules at all.** Velocity and
+  facing live only in `CharacterKinematicState`, but `WithRuntimeState` was
+  documented to leave the kinematic state untouched, which would have meant the
+  character never moved. Fixed, and the round trip is now explicit about which
+  fields cross in each direction.
+- **No path for input edges.** The rule simulators read jump/crouch press and
+  release, but `CharacterSimulationInput` carries held state only. The critic
+  proposed storing the previous frame's held bits; that remedy was rejected,
+  because it reintroduces exactly the transient-bit fragility P03-05 exists to
+  eliminate. The design routes edges through durable transitions and the redesign
+  anticipates a compatibility mapper for tick-local bits, so `OwnerInputEdgeMapper`
+  now derives edges from applied transition references. That is also strictly
+  better for replay: an edge is present on the frame its transition applies, so a
+  restored frame reproduces it without needing the prior frame at all.
+- **No path for movement influence.** Accepted attack feel gates sprint,
+  momentum, acceleration, and steering off the active attack step, and nothing in
+  the rewind unit could say which step was active. Added `CharacterActionState`
+  — correlation and phase only, never an outcome.
+- **Movement sources would have double-counted.** The contribution had no stated
+  lifetime, and the obvious implementation persists it into velocity, so the next
+  frame re-evaluates the same curve on top of it and a lunge accelerates every
+  frame. Now pinned: sources apply to displacement only and are never persisted.
+- **Penetration recovery had no query it could use.** A sweep needs a direction
+  and reports an undefined fraction at zero motion, which is exactly the recovery
+  case. Added `ResolveOverlap`, returning separation direction and depth.
+- **Zero per-frame allocation was unreachable.** `MovementRuntimeState` was a
+  record class, so every `with` in the rule simulators heap-allocated, multiplied
+  by history depth and combatant count. Converted to a `readonly record struct`;
+  the `with` expressions compile unchanged, all 1,092 tests still pass, so the
+  accepted rules are preserved verbatim.
+- **The canonical frame order was wrong.** Profile resolution sat before the
+  crouch/roll rules, but those rules *produce* the profile intent, so a frame
+  entering a roll would have swept the standing capsule and committed the rolling
+  one. Reordered to probe clearance, run the rules, then commit the profile
+  before the move.
+
+Also applied: capsule dimensions and motor policy are now revisioned content
+rather than singletons, so a replayed frame uses the tuning in force on it;
+sweep results carry achieved and remaining motion as vectors rather than a scalar
+fraction, because the engine folds depenetration into travel; `MovementSourceBuffer`
+implements `IEquatable` so the record struct holding it does not fall back to
+reflection-based equality; source capacity raised from 8 to 16 to match the
+design's stated wire bound; `Simulate` returns a result carrying motor
+diagnostics, which the golden suite and Phase 6 reconciliation both need; the
+accepted crouch speed scaling and sprint/jump stripping currently stranded in the
+Godot driver were given a home; and the capsule origin is documented as a foot
+position, correcting a comment that would have sunk characters into the floor.
+
+Deferred deliberately, recorded rather than fixed: `SupportIdentity` to Godot
+`Rid` mapping and the shape-granularity limit of body exclusion (P05-06 decides
+it against the real API); and P05-11's player-clearance acceptance, which cannot
+be met by a static-only world and belongs with Phase 9 frame-aligned collision.
+
+
 - [ ] **P05-01 — Define compact kinematic and contact state.**
+  - Status: **Stubs Reviewed**.
   - Purpose: Own position, velocity, facing, grounded, normal, support behavior,
     and stable contact facts in replayable value state.
   - Target files: `CharacterKinematicState.cs`,
@@ -1152,6 +1272,7 @@ The active step is the first unchecked item whose prerequisites are complete.
     semantics pass without per-frame allocation.
 
 - [ ] **P05-02 — Define collision profile state and bounds.**
+  - Status: **Stubs Reviewed**.
   - Purpose: Represent standing/crouching/rolling profiles by stable identity and
     validated dimensions.
   - Target files: `CollisionProfileState.cs`,
@@ -1159,6 +1280,7 @@ The active step is the first unchecked item whose prerequisites are complete.
   - Verification: Profile validation and legal shrink/expansion intent tests pass.
 
 - [ ] **P05-03 — Define bounded movement-source state.**
+  - Status: **Stubs Reviewed**.
   - Purpose: Store replayable lunge, roll, dash, knockback, pull, and future item
     motion in a fixed-capacity value buffer.
   - Target files: `MovementSourceState.cs`, `MovementSourceBuffer.cs`,
@@ -1167,6 +1289,7 @@ The active step is the first unchecked item whose prerequisites are complete.
     no-allocation tests pass.
 
 - [ ] **P05-04 — Define the aggregate character simulation state.**
+  - Status: **Stubs Reviewed**.
   - Purpose: Combine movement, action, contact, profile, sources, revisions, and
     deterministic counters into the complete rewind unit.
   - Target files: `CharacterSimulationState.cs`,
@@ -1175,6 +1298,7 @@ The active step is the first unchecked item whose prerequisites are complete.
     is omitted and authority-only hit/damage state cannot be stored.
 
 - [ ] **P05-05 — Define query-neutral collision contracts.**
+  - Status: **Stubs Reviewed**.
   - Purpose: Isolate sweep, ground probe, clearance, and support motion from Godot
     nodes and presentation.
   - Target files: `ICharacterCollisionWorld.cs`,
@@ -1182,6 +1306,7 @@ The active step is the first unchecked item whose prerequisites are complete.
   - Verification: Contract validation and deterministic fake-world tests pass.
 
 - [ ] **P05-06 — Implement the static Godot query adapter.**
+  - Status: **Stubs Reviewed**.
   - Purpose: Execute explicit-transform capsule queries with precreated profile
     RIDs, static-only masks, exclusions, and reusable buffers.
   - Target files: `GodotKinematicCollisionWorld.cs`,
@@ -1190,6 +1315,7 @@ The active step is the first unchecked item whose prerequisites are complete.
     reusable results, and same-frame query/commit behavior.
 
 - [ ] **P05-07 — Implement bounded sweep and penetration recovery.**
+  - Status: **Stubs Reviewed**.
   - Purpose: Resolve desired capsule travel and recover legal shallow overlap from
     explicit state.
   - Target files: `CapsuleMovementSimulator.cs`,
@@ -1198,6 +1324,7 @@ The active step is the first unchecked item whose prerequisites are complete.
     iterations, and unrecoverable penetration pass.
 
 - [ ] **P05-08 — Implement stable slide resolution.**
+  - Status: **Stubs Reviewed**.
   - Purpose: Resolve multiple contacts in stable fraction/collider/shape/normal
     order without node iteration dependence.
   - Target files: `CapsuleMovementSimulator.cs`,
@@ -1206,6 +1333,7 @@ The active step is the first unchecked item whose prerequisites are complete.
     and iteration-cap traces pass.
 
 - [ ] **P05-09 — Implement slope classification and ground snap.**
+  - Status: **Stubs Reviewed**.
   - Purpose: Reproduce walkable/unwalkable slopes, explicit ground probing, and
     no snap while rising.
   - Target files: `CapsuleMovementSimulator.cs`,
@@ -1214,6 +1342,7 @@ The active step is the first unchecked item whose prerequisites are complete.
     and normal tolerance tests pass.
 
 - [ ] **P05-10 — Implement explicit stair/step solving.**
+  - Status: **Stubs Reviewed**.
   - Purpose: Generalize up-forward-down stepping for direct and strafing entry
     without changing the map to hide lips.
   - Target files: `CapsuleMovementSimulator.cs`,
@@ -1222,6 +1351,7 @@ The active step is the first unchecked item whose prerequisites are complete.
     headroom, and no-progress rejection pass.
 
 - [ ] **P05-11 — Implement ceiling and profile-clearance rules.**
+  - Status: **Stubs Reviewed**.
   - Purpose: Stop upward motion on ceilings and allow profile expansion only when
     static/player clearance permits it.
   - Target files: `CapsuleMovementSimulator.cs`,
@@ -1230,6 +1360,7 @@ The active step is the first unchecked item whose prerequisites are complete.
     and forced-expansion policy pass.
 
 - [ ] **P05-12 — Compose ground and airborne locomotion.**
+  - Status: **Stubs Reviewed**.
   - Purpose: Reuse accepted acceleration, run/sprint, momentum, air-control, and
     falling rules through the explicit motor.
   - Target files: `CharacterMovementSimulator.cs`,
@@ -1237,6 +1368,7 @@ The active step is the first unchecked item whose prerequisites are complete.
   - Verification: Existing movement golden curves match accepted tolerances.
 
 - [ ] **P05-13 — Integrate jump state and durable transitions.**
+  - Status: **Stubs Reviewed**.
   - Purpose: Preserve variable hold, coyote, buffering, apex, fast fall, momentum,
     lateral control, and air sprint under restore/replay.
   - Target files: `CharacterMovementSimulator.cs`,
@@ -1245,6 +1377,7 @@ The active step is the first unchecked item whose prerequisites are complete.
     canonical state.
 
 - [ ] **P05-14 — Integrate crouch and roll state.**
+  - Status: **Stubs Reviewed**.
   - Purpose: Preserve hold-to-crouch, moving roll, tap/hold duration, momentum,
     steering, cooldown, landing roll, and non-cancelability.
   - Target files: `CharacterMovementSimulator.cs`,
@@ -1252,6 +1385,7 @@ The active step is the first unchecked item whose prerequisites are complete.
   - Verification: Restore/replay and accepted roll-distance/timing traces pass.
 
 - [ ] **P05-15 — Integrate replayable external movement sources.**
+  - Status: **Stubs Reviewed**.
   - Purpose: Apply source curves in the canonical frame order instead of mutating
     node velocity once.
   - Target files: `MovementSourceSimulator.cs`,
@@ -1260,6 +1394,7 @@ The active step is the first unchecked item whose prerequisites are complete.
     traces pass.
 
 - [ ] **P05-16 — Add the dual-motor offline test adapter.**
+  - Status: **Stubs Reviewed**.
   - Purpose: Let the existing movement arena switch between Legacy and
     ExplicitQueryMotor without changing accepted content values.
   - Target files: `MovementTestPlayer.cs`, `movement_test_arena.tscn`,
@@ -1268,6 +1403,7 @@ The active step is the first unchecked item whose prerequisites are complete.
     in diagnostics.
 
 - [ ] **P05-17 — Lock the explicit-motor golden suite.**
+  - Status: **Stubs Reviewed**.
   - Purpose: Cover the complete arena course and 10,000-frame restore/replay
     reproducibility before networking cutover.
   - Target files: `ExplicitMotorGoldenTraceTests.cs`,

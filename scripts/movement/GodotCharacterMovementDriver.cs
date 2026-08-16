@@ -34,7 +34,7 @@ public sealed class GodotCharacterMovementDriver
         _bodyCollision = bodyCollision ?? throw new ArgumentNullException(nameof(bodyCollision));
         Attributes = attributes ?? throw new ArgumentNullException(nameof(attributes));
         _simulationRate = simulationRate;
-        State = initialState ?? throw new ArgumentNullException(nameof(initialState));
+        State = initialState;
 
         _body.FloorSnapLength = (float)Attributes.Ground.FloorSnapDistance;
         _body.FloorMaxAngle = (float)Attributes.Ground.MaximumFloorAngleRadians;
@@ -138,7 +138,7 @@ public sealed class GodotCharacterMovementDriver
 
     public void Restore(MovementRuntimeState state, Vector3 velocity)
     {
-        State = state ?? throw new ArgumentNullException(nameof(state));
+        State = state;
         _body.Velocity = velocity;
         ApplyCollisionProfile();
     }
@@ -151,7 +151,7 @@ public sealed class GodotCharacterMovementDriver
 
     public void ReplaceState(MovementRuntimeState state)
     {
-        State = state ?? throw new ArgumentNullException(nameof(state));
+        State = state;
         ApplyCollisionProfile();
     }
 

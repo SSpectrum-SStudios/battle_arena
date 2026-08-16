@@ -2,7 +2,15 @@ using BattleArena.Core.Common;
 
 namespace BattleArena.Core.Movement;
 
-public sealed record MovementRuntimeState
+/// <remarks>
+/// A value struct rather than a record class. The rule simulators build results
+/// with `with` expressions, which on a record class heap-allocate once or twice
+/// per call; owner replay runs those simulators for every retained frame of
+/// every combatant, so that allocation is multiplied by history depth and
+/// combatant count. The `with` expressions compile unchanged over a struct, so
+/// the accepted rules are preserved verbatim.
+/// </remarks>
+public readonly record struct MovementRuntimeState
 {
     public MovementRuntimeState(
         HorizontalVector horizontalVelocity,
