@@ -33,6 +33,23 @@ public enum AuthorityInputAdmissionFault : byte
     /// offset. A violation means forged or corrupted identity, not packet loss.
     /// </summary>
     SequenceFrameSkew = 4,
+
+    /// <summary>
+    /// No scheduler exists for the addressed combatant: it never joined, already
+    /// left, or is not under V2 scheduling. Distinct from
+    /// <see cref="ForeignScope"/>, which means the combatant is scheduled but the
+    /// command belongs to a different epoch — the two say different things about
+    /// a peer and must stay separable on the telemetry surface.
+    /// </summary>
+    UnknownCombatant = 5,
+
+    /// <summary>
+    /// Admission was attempted while a frame run was in progress. Draining
+    /// network evidence is a distinct pipeline step that happens before the fixed
+    /// frame boundary; accepting mid-run would make whether a command reaches its
+    /// target frame depend on the order combatants were simulated in.
+    /// </summary>
+    FrameRunInProgress = 6,
 }
 
 /// <summary>

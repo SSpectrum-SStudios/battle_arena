@@ -7,6 +7,13 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <!-- The V2 scheduling aggregates are internal so the composition root's
+         frame-barrier invariants cannot be bypassed by production callers.
+         Tests still need to observe them. -->
+    <InternalsVisibleTo Include="BattleArena.Multiplayer.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\BattleArena.Core\BattleArena.Core.csproj" />
     <ProjectReference Include="..\BattleArena.Protocol\BattleArena.Protocol.csproj" />
   </ItemGroup>

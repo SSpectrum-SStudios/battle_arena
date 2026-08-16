@@ -7,6 +7,7 @@ using BattleArena.Core.Combat;
 using BattleArena.Core.Common;
 using BattleArena.Core.Movement;
 using BattleArena.Core.Movement.Simulation;
+using BattleArena.Multiplayer.AuthoritySimulation;
 using BattleArena.Multiplayer.Connection;
 using BattleArena.Multiplayer.OwnerPrediction;
 using BattleArena.Multiplayer.Presentation;
@@ -22,7 +23,7 @@ using Godot;
 
 namespace BattleArena.GodotNetworking;
 
-public partial class NetworkArena : Node3D
+public partial class NetworkArena : Node3D, IAuthorityFrameSimulator
 {
     private const ulong HostCombatantId = 1;
     private const float FixedDelta = 1f / 60f;
@@ -104,6 +105,37 @@ public partial class NetworkArena : Node3D
         new MovementPredictionBundleFactory();
     private OwnerPredictionModePolicy _ownerPredictionModePolicy =
         OwnerPredictionModePolicy.Default;
+
+    /// <summary>
+    /// V2 exact-scheduling composition. Null on the Legacy path, which is the
+    /// default and stays byte-for-byte unchanged by this integration.
+    /// </summary>
+    /// <remarks>
+    /// The scheduling subsystem lives in <c>BattleArena.Multiplayer</c> and is
+    /// engine-free; this node holds one instance and delegates. That keeps the
+    /// V2 path unit-testable rather than reachable only through a headless
+    /// two-process run, and keeps this already-large node from absorbing another
+    /// subsystem.
+    /// </remarks>
+    private AuthorityOwnerSchedulingHost? _schedulingHost;
+
+    /// <summary>
+    /// Combatants whose authority epoch changed during a frame run, rebuilt
+    /// before the next one. Respawn is the common case and it fires from inside
+    /// EndFrame, where rebuilding is refused.
+    /// </summary>
+    private readonly HashSet<ulong> _pendingV2EpochRebuilds = [];
+
+    /// <summary>Tick the headless combat/V2 smoke gates finish at.</summary>
+    private const ulong CombatSmokeCompletionTick = 75;
+
+    private long _v2RemoteCommandsAdmitted;
+    private long _v2RemoteCommandsDuplicate;
+    private long _v2RemoteCommandsLate;
+    private long _v2RemoteCommandsRefused;
+    private long _v2OwnerStatesBuilt;
+    private long _v2OwnerStateBacklogs;
+    private long _v2LeadUpdatesEmitted;
     private CombatApplicationFacade _combat = null!;
     private INetworkTransport _transport = null!;
     private AuthorityConnectionService? _authorityService;
@@ -240,6 +272,14 @@ public partial class NetworkArena : Node3D
         if (_mode == ArenaMode.Authority)
         {
             SpawnAuthorityAvatars();
+
+            // After avatars exist and every already-connected peer is known.
+            // A client neither schedules nor paces authority frames, so it never
+            // builds a host even under V2.
+            if (_ownerPredictionModePolicy.SelectedMode == OwnerPredictionMode.FrameRewindV2)
+            {
+                BuildOwnerSchedulingHost();
+            }
         }
         else
         {
@@ -260,15 +300,547 @@ public partial class NetworkArena : Node3D
 
     private void ConfigureOwnerPredictionMode()
     {
-        var policy = new OwnerPredictionModePolicy(OwnerPredictionModeSelection);
-        if (policy.SelectedMode != OwnerPredictionMode.Legacy)
-        {
-            throw new InvalidOperationException(
-                $"Owner prediction mode {policy.SelectedMode} is not available in this build.");
-        }
-
+        // A command-line override exists so the headless V2 smoke gate can select
+        // the path without editing the scene, keeping the exported default
+        // Legacy for every real build.
+        var selection = OS.GetCmdlineArgs()
+            .Concat(OS.GetCmdlineUserArgs())
+            .Contains("--owner-prediction-v2", StringComparer.Ordinal)
+            ? OwnerPredictionMode.FrameRewindV2
+            : OwnerPredictionModeSelection;
+        var policy = new OwnerPredictionModePolicy(selection);
         _ownerPredictionModePolicy = policy;
         GD.Print($"[NetworkArena] Owner prediction mode: {_ownerPredictionModePolicy.SelectedMode}");
+    }
+
+    /// <summary>
+    /// Constructs the V2 scheduling host and registers the listen host plus every
+    /// already-connected combatant.
+    /// </summary>
+    /// <remarks>
+    /// Only the authority builds one. A client neither schedules nor paces
+    /// authority frames, so on a client this stays null even under V2 and the
+    /// existing prediction/relay path is untouched.
+    /// </remarks>
+    private void BuildOwnerSchedulingHost()
+    {
+        var rate = new SimulationRate(Engine.PhysicsTicksPerSecond);
+
+        // Capacity is also the acceptance horizon and the flood bound. Sized to
+        // twice the negotiated lead ceiling so a client legitimately sending at
+        // the maximum lead is never refused as beyond horizon, with headroom for
+        // the burst that follows a recovered stall.
+        var capacityFrames = Math.Clamp(
+            PredictionLeadControllerPolicy.MaximumLeadFramesForRate(rate) * 2,
+            AuthorityOwnerInputScheduler.MinimumCapacityFrames,
+            AuthorityOwnerInputScheduler.MaximumCapacityFrames);
+        var fallbackPolicy = new AuthorityInputFallbackPolicy(
+            AuthorityInputFallbackPolicy.DefaultMaximumRepeatedContinuousFrames);
+
+        _schedulingHost = new AuthorityOwnerSchedulingHost(
+            rate,
+            AuthoritySimulationClockPolicy.Default,
+            MatchFrameEpochId.Initial,
+            new SimulationInstant(checked((long)_simulationTick)));
+
+        _schedulingHost.RegisterCombatant(
+            AuthorityEpochFor(HostCombatantId),
+            capacityFrames,
+            fallbackPolicy,
+            isListenHost: true);
+        foreach (var remote in _remoteInputs.Values)
+        {
+            _schedulingHost.RegisterCombatant(
+                AuthorityEpochFor(remote.Player.CombatantId),
+                capacityFrames,
+                fallbackPolicy,
+                isListenHost: false);
+        }
+
+        GD.Print(
+            $"[NetworkArena] V2 scheduling host built; combatants " +
+            $"{_schedulingHost.Combatants.Count}; capacity {capacityFrames} frames");
+    }
+
+    /// <summary>
+    /// The authority prediction epoch for one combatant at its current life.
+    /// </summary>
+    /// <remarks>
+    /// Authority discontinuity and owner control are both seeded from the life
+    /// generation while V1 lifecycle mapping remains in place; the full
+    /// lifecycle-driven epoch is Phase 6 work. Session identity comes from the
+    /// authority service so a reconnecting peer cannot reuse another session's
+    /// scope.
+    /// </remarks>
+    private CombatantAuthorityPredictionEpoch AuthorityEpochFor(ulong combatantId)
+    {
+        var life = _lifeGenerations.GetValueOrDefault(combatantId, 1UL);
+        return new CombatantAuthorityPredictionEpoch(
+            _authorityService?.SessionId ?? 1UL,
+            _schedulingHost?.MatchFrameEpoch ?? MatchFrameEpochId.Initial,
+            new CombatantId(checked((long)combatantId)),
+            new LifeGenerationId(checked((long)life)),
+            new AuthorityDiscontinuityId(life),
+            new OwnerControlEpoch(life));
+    }
+
+    /// <summary>
+    /// The V2 counterpart of the legacy per-combatant input consumption in
+    /// <see cref="SimulateAuthority"/>.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Where the legacy path calls <c>ConsumeRevisioned</c> once per combatant
+    /// per engine callback — which could compact several client ticks into one
+    /// integration step — this hands the elapsed wall time to the scheduling
+    /// host, which runs every due frame for every combatant and calls back into
+    /// this node through <see cref="IAuthorityFrameSimulator"/>. A burst of four
+    /// commands therefore produces four simulated frames.
+    /// </para>
+    /// <para>
+    /// The host owns the loop, so this method cannot skip a combatant, resolve
+    /// one twice, or complete a frame that was not simulated.
+    /// </para>
+    /// </remarks>
+    private void SimulateAuthorityV2(float delta)
+    {
+        DrainPendingEpochRebuildsV2();
+        var summary = _schedulingHost!.RunDueFrames(
+            delta * 1000d,
+            checked((long)_networkTimeSource.GetTimestampMicroseconds()),
+            this);
+
+        if (summary.TimelineReset is { } reset)
+        {
+            // Unrecoverable lag. The clock latches this, so it arrives once
+            // rather than every callback. Resuming adopts a new match-frame
+            // epoch and rebuilds every combatant against it.
+            GD.PrintErr(
+                $"[NetworkArena] Authority timeline reset: {reset.Reason}; " +
+                $"resuming at frame {_simulationTick + 1}");
+            _schedulingHost.ResumeAfterMatchEpochReset(
+                _schedulingHost.MatchFrameEpoch.Next(),
+                new SimulationInstant(checked((long)_simulationTick) + 1));
+            return;
+        }
+
+        if (summary.FramesRun > 0)
+        {
+            SendOwnerLeadUpdatesV2();
+            SendOwnerSchedulingStateV2();
+        }
+
+        // The legacy body owns the smoke-test exit, and V2 returns before
+        // reaching it, so V2 needs its own. Without this the headless gate has
+        // no way to terminate and every V2 run hangs.
+        if (_combatSmokeTest && _simulationTick >= CombatSmokeCompletionTick)
+        {
+            var accountedFrames = _schedulingHost.LastCompletedFrame?.Tick ?? -1;
+            var passed = accountedFrames >= 0 && _v2RemoteCommandsAdmitted > 0;
+            GD.Print(
+                $"[NetworkArena] V2 scheduling smoke {(passed ? "passed" : "failed")}; " +
+                $"accounted frames {accountedFrames}");
+            GetTree().Quit(passed ? 0 : 1);
+        }
+    }
+
+    /// <summary>
+    /// Captures the listen host's input for one target frame and routes it
+    /// through the in-memory publisher, so host input is admitted by the same
+    /// scheduler rules a remote client's command faces.
+    /// </summary>
+    /// <remarks>
+    /// Supplies only the input. The command's sequence is derived from the target
+    /// frame by the scheduling group, because a node-side counter that advanced
+    /// on a frame the host did not publish would break the scheduler's fixed
+    /// sequence/frame offset and wedge host input for the rest of the epoch.
+    /// </remarks>
+    private void PublishHostOwnerCommandV2(SimulationInstant targetFrame, float delta)
+    {
+        if (_localAvatar.IsEliminated)
+        {
+            // No command for a frame the override path will resolve. The
+            // sequence is derived from the target frame, so skipping publication
+            // cannot desynchronise the scheduler's sequence/frame offset.
+            return;
+        }
+
+        var captured = _localAvatar.CaptureInput(
+            _nextHostInputSequence++,
+            checked((ulong)targetFrame.Tick),
+            delta);
+        var sample = new OwnerCommandInputSample(
+            MovementAxes.FromUnitVector(new HorizontalVector(captured.MoveX, captured.MoveZ)),
+            ViewOrientation.FromRadians(captured.YawRadians, captured.PitchRadians),
+            new MovementHeldState(MovementHeldButtonsFrom(captured.HeldButtons)),
+            new CombatInputState(CombatHeldButtonsFrom(captured.HeldButtons)),
+            new MovementConfigurationRevision(1),
+            new MovementCapabilityRevision(1));
+
+        _schedulingHost!.PublishHostCommand(
+            new CombatantId(checked((long)HostCombatantId)),
+            targetFrame,
+            sample.ToSimulationInput(default, default));
+    }
+
+    private static MovementHeldButtons MovementHeldButtonsFrom(MovementButtons buttons)
+    {
+        var held = MovementHeldButtons.None;
+        if (buttons.HasFlag(MovementButtons.Sprint))
+        {
+            held |= MovementHeldButtons.Sprint;
+        }
+        if (buttons.HasFlag(MovementButtons.Jump))
+        {
+            held |= MovementHeldButtons.Jump;
+        }
+        if (buttons.HasFlag(MovementButtons.CrouchOrRoll))
+        {
+            held |= MovementHeldButtons.CrouchOrRoll;
+        }
+        return held;
+    }
+
+    private static CombatHeldButtons CombatHeldButtonsFrom(MovementButtons buttons) =>
+        buttons.HasFlag(MovementButtons.Attack)
+            ? CombatHeldButtons.Attack
+            : CombatHeldButtons.None;
+
+    /// <inheritdoc />
+    void IAuthorityFrameSimulator.BeginFrame(SimulationInstant frame)
+    {
+        // V2 drives the frame counter, so everything keyed off _simulationTick
+        // sees the frame actually being simulated rather than a callback count.
+        _simulationTick = checked((ulong)frame.Tick);
+        _combat.AdvanceOneTick();
+
+        // The host's own command for this frame is published before it resolves,
+        // so it is admitted in time to be the frame's received input rather than
+        // arriving late against a frame already consumed.
+        PublishHostOwnerCommandV2(frame, (float)(1d / Engine.PhysicsTicksPerSecond));
+    }
+
+    /// <inheritdoc />
+    AuthorityFallbackInputBasis IAuthorityFrameSimulator.GetFallbackBasis(
+        CombatantId combatantId,
+        SimulationInstant frame)
+    {
+        var avatar = _avatars[checked((ulong)combatantId.Value)];
+        return new AuthorityFallbackInputBasis(
+            ViewOrientation.FromRadians(avatar.Yaw, avatar.Pitch),
+            new MovementConfigurationRevision(1),
+            new MovementCapabilityRevision(1));
+    }
+
+    /// <inheritdoc />
+    bool IAuthorityFrameSimulator.TryGetAuthorityOverride(
+        CombatantId combatantId,
+        SimulationInstant frame,
+        out CharacterSimulationInput overrideInput,
+        out AuthorityInputOverrideReason reason)
+    {
+        var avatar = _avatars[checked((ulong)combatantId.Value)];
+        if (!avatar.IsEliminated)
+        {
+            overrideInput = default;
+            reason = default;
+            return false;
+        }
+
+        // An eliminated combatant still consumes its frame, with neutral intent
+        // under a declared reason. Skipping the frame instead would leave a hole
+        // a late command could later be applied to.
+        overrideInput = new OwnerCommandInputSample(
+            default,
+            ViewOrientation.FromRadians(avatar.Yaw, avatar.Pitch),
+            default,
+            default,
+            new MovementConfigurationRevision(1),
+            new MovementCapabilityRevision(1)).ToSimulationInput(default, default);
+        reason = AuthorityInputOverrideReason.Eliminated;
+        return true;
+    }
+
+    /// <inheritdoc />
+    void IAuthorityFrameSimulator.IntegrateFrame(
+        CombatantId combatantId,
+        in AuthorityInputFrameDecision decision)
+    {
+        var id = checked((ulong)combatantId.Value);
+        var avatar = _avatars[id];
+        var delta = (float)(1d / Engine.PhysicsTicksPerSecond);
+
+        // The decision already carries the exact input this frame applies,
+        // whether it came from an owner command, the fallback policy, or an
+        // authority override. Phase 5 replaces this legacy motor call with the
+        // explicit-state kinematic step; the decision contract does not change.
+        var input = NetworkMovementInputFrom(decision, id);
+        avatar.Simulate(input, delta);
+        TrackAttackLifecycle(avatar);
+
+        if (decision.ReceivedCommand is not null &&
+            _remoteInputs.Values.FirstOrDefault(r => r.Player.CombatantId == id)
+                is { } remote)
+        {
+            var source = new SessionPeer(
+                remote.Player.SessionPeerId,
+                remote.Player.ConnectionGeneration,
+                remote.Player.PlayerId,
+                remote.Player.CombatantId,
+                remote.Player.DisplayName,
+                isAuthority: false);
+            var canonical = _authorityMovementDistribution.AcceptAppliedCommand(
+                source,
+                _lifeGenerations.GetValueOrDefault(id, 1UL),
+                new RevisionedMovementCommand(input.ToMovementCommand(), 1, 1),
+                _simulationTick);
+            _movementRelayBuffer.Record(
+                MovementCommandProtocolMapper.FromProtocol(canonical));
+        }
+    }
+
+    /// <inheritdoc />
+    void IAuthorityFrameSimulator.EndFrame(SimulationInstant frame)
+    {
+        // Cross-combatant resolution: every combatant now holds its post-state
+        // for this frame.
+        RecordPoseHistory();
+        ResolveAuthorityMeleeHits();
+        ProcessCombatFacts();
+        AdvanceRespawns();
+        SendAcceptedMovementCommands();
+        SendAuthorityEvents();
+        SendAuthorityMovementFrames();
+    }
+
+    /// <summary>
+    /// Projects one committed authority decision back into the legacy movement
+    /// input the current motor consumes.
+    /// </summary>
+    /// <remarks>
+    /// A bridge, not a design: Phase 5 replaces the motor with one that takes
+    /// <see cref="CharacterSimulationInput"/> directly and this disappears. The
+    /// sequence is reported for diagnostics only and is zero for a frame no owner
+    /// command supplied, which is exactly what the decision already records.
+    /// </remarks>
+    private NetworkMovementInput NetworkMovementInputFrom(
+        in AuthorityInputFrameDecision decision,
+        ulong combatantId)
+    {
+        var applied = decision.AppliedInput;
+        var buttons = MovementButtons.None;
+        if (applied.MovementHeld.Buttons.HasFlag(MovementHeldButtons.Sprint))
+        {
+            buttons |= MovementButtons.Sprint;
+        }
+        if (applied.MovementHeld.Buttons.HasFlag(MovementHeldButtons.Jump))
+        {
+            buttons |= MovementButtons.Jump;
+        }
+        if (applied.MovementHeld.Buttons.HasFlag(MovementHeldButtons.CrouchOrRoll))
+        {
+            buttons |= MovementButtons.CrouchOrRoll;
+        }
+        if (applied.CombatInput.HeldButtons.HasFlag(CombatHeldButtons.Attack))
+        {
+            buttons |= MovementButtons.Attack;
+        }
+
+        return new NetworkMovementInput(
+            decision.AppliedInputSequence?.Value ?? 0UL,
+            checked((ulong)decision.Identity.Frame.Tick),
+            applied.Movement.XQ15 / (float)MovementAxes.MaximumMagnitude,
+            applied.Movement.ZQ15 / (float)MovementAxes.MaximumMagnitude,
+            (float)applied.View.YawRadians,
+            (float)applied.View.PitchRadians,
+            buttons,
+            MovementButtons.None,
+            MovementButtons.None);
+    }
+
+    /// <summary>
+    /// Evaluates lead control for every V2 combatant and sends any due absolute
+    /// lead update, honouring the debounce so a persistent rebase condition
+    /// emits one reliable message rather than one per frame.
+    /// </summary>
+    /// <summary>
+    /// Bridges one legacy movement frame into a V2 owner command and offers it to
+    /// the scheduler.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// A bridge, not the destination. `OwnerCommandBatchDraft` is deliberately
+    /// absent from `PacketEnvelope` v1 until the coordinated protocol bump, so
+    /// until then the only remote owner input on the wire is the legacy frame.
+    /// Mapping it here is what lets both host and client drive the V2 scheduler
+    /// now instead of leaving remote players resolving from fallback forever.
+    /// </para>
+    /// <para>
+    /// The scheduler requires a fixed <c>sequence - targetFrame</c> offset for an
+    /// epoch's lifetime. A well-behaved legacy client advances both by one per
+    /// physics frame, so the offset holds; a client that violates it is rejected
+    /// as <see cref="AuthorityInputAdmissionFault.SequenceFrameSkew"/> rather
+    /// than corrupting the timeline, which is the correct outcome for input this
+    /// scheduler cannot place exactly.
+    /// </para>
+    /// </remarks>
+    private void AdmitRemoteOwnerCommandV2(ulong combatantId, ClientInputFrame frame)
+    {
+        var epoch = AuthorityEpochFor(combatantId);
+        var sample = new OwnerCommandInputSample(
+            MovementAxes.FromUnitVector(new HorizontalVector(frame.MoveX, frame.MoveZ)),
+            ViewOrientation.FromRadians(frame.ViewYawRadians, frame.ViewPitchRadians),
+            new MovementHeldState(MovementHeldButtonsFrom((MovementButtons)frame.ButtonBits)),
+            new CombatInputState(CombatHeldButtonsFrom((MovementButtons)frame.ButtonBits)),
+            new MovementConfigurationRevision(Math.Max(1UL, frame.MovementProfileRevision)),
+            new MovementCapabilityRevision(Math.Max(1UL, frame.MovementCapabilityRevision)));
+
+        var admission = _schedulingHost!.TryAdmitRemoteCommand(
+            new CombatantId(checked((long)combatantId)),
+            new OwnerSimulationCommand(
+                new OwnerInputIdentity(
+                    OwnerIntentScope.From(epoch),
+                    new InputSequence(Math.Max(1UL, frame.InputSequence))),
+                epoch.AuthorityDiscontinuity,
+                epoch.MatchFrameEpoch,
+                new SimulationInstant(checked((long)frame.ClientTick)),
+                sample.ToSimulationInput(default, default)));
+        // Counted by disposition rather than by WasStored. A client legitimately
+        // resends its recent command history in every bundle, so duplicates are
+        // the expected majority and folding them into "refused" would make a
+        // healthy link look broken.
+        switch (admission.Disposition)
+        {
+            case OwnerInputArrivalDisposition.NewCommandAccepted:
+                _v2RemoteCommandsAdmitted++;
+                break;
+            case OwnerInputArrivalDisposition.DuplicateCommand:
+                _v2RemoteCommandsDuplicate++;
+                break;
+            case OwnerInputArrivalDisposition.LateCommand:
+                _v2RemoteCommandsLate++;
+                break;
+            default:
+                _v2RemoteCommandsRefused++;
+                if (_v2RemoteCommandsRefused <= 3)
+                {
+                    GD.Print(
+                        $"[NetworkArena] V2 refused remote command for combatant " +
+                        $"{combatantId}: {admission.Fault}");
+                }
+                break;
+        }
+    }
+
+    /// <summary>
+    /// Rebuilds any combatant whose epoch changed while a frame run was in
+    /// progress.
+    /// </summary>
+    /// <remarks>
+    /// Respawn advances the life generation, and life is part of
+    /// <see cref="OwnerIntentScope"/>, so a respawn is an epoch change that must
+    /// rebuild the scheduler and publisher together. But respawns are advanced
+    /// from <c>AdvanceRespawns</c>, which runs inside <c>EndFrame</c> — inside
+    /// the frame run, where rebuilding is refused precisely because it would
+    /// change scheduling state mid-frame. The rebuild is therefore queued there
+    /// and drained here, between runs.
+    /// </remarks>
+    private void DrainPendingEpochRebuildsV2()
+    {
+        if (_pendingV2EpochRebuilds.Count == 0)
+        {
+            return;
+        }
+
+        var rate = new SimulationRate(Engine.PhysicsTicksPerSecond);
+        var capacityFrames = Math.Clamp(
+            PredictionLeadControllerPolicy.MaximumLeadFramesForRate(rate) * 2,
+            AuthorityOwnerInputScheduler.MinimumCapacityFrames,
+            AuthorityOwnerInputScheduler.MaximumCapacityFrames);
+        var fallbackPolicy = new AuthorityInputFallbackPolicy(
+            AuthorityInputFallbackPolicy.DefaultMaximumRepeatedContinuousFrames);
+
+        foreach (var combatantId in _pendingV2EpochRebuilds)
+        {
+            _schedulingHost!.RebuildForEpoch(
+                AuthorityEpochFor(combatantId),
+                capacityFrames,
+                fallbackPolicy,
+                isListenHost: combatantId == HostCombatantId);
+        }
+
+        _pendingV2EpochRebuilds.Clear();
+    }
+
+    /// <summary>
+    /// Records that a combatant's authority epoch changed, for the rebuild drained
+    /// before the next frame run.
+    /// </summary>
+    private void QueueV2EpochRebuild(ulong combatantId)
+    {
+        if (_schedulingHost is not null)
+        {
+            _pendingV2EpochRebuilds.Add(combatantId);
+        }
+    }
+
+    private void SendOwnerLeadUpdatesV2()
+    {
+        // Lead updates are computed but not transmitted: the draft messages are
+        // deliberately absent from PacketEnvelope v1 until the coordinated
+        // protocol bump, and P04-10's validator must gate them on arrival. The
+        // control law still runs so its behaviour is observable in the V2 smoke
+        // gate rather than first exercised on a real link.
+        foreach (var combatantId in _schedulingHost!.Combatants)
+        {
+            var emission = _schedulingHost.EvaluateLead(
+                combatantId,
+                _authorityMovementPath.Current,
+                clockConfidence: 1d);
+            if (emission.RebaseClaimed)
+            {
+                GD.Print(
+                    $"[NetworkArena] V2 rebase claimed for combatant {combatantId.Value}; " +
+                    $"reason {emission.Evaluation.Reason}");
+            }
+            if (emission.Evaluation.Update is { } update)
+            {
+                _v2LeadUpdatesEmitted++;
+                GD.Print(
+                    $"[NetworkArena] V2 lead update for combatant {combatantId.Value}: " +
+                    $"{update.TargetLead.Value} frames; revision {update.Revision.Value}");
+            }
+        }
+    }
+
+    /// <summary>
+    /// Publishes each V2 combatant's exact scheduling acknowledgement.
+    /// </summary>
+    /// <remarks>
+    /// Not routed on a real transport until P04-10 supplies context-relative
+    /// validation for <c>AuthorityOwnerStateDraft</c>. Until then this records
+    /// the state for diagnostics and the V2 smoke gate only.
+    /// </remarks>
+    private void SendOwnerSchedulingStateV2()
+    {
+        // Built but not routed. P04-10's validator exists, but
+        // AuthorityOwnerStateDraft is not carried by PacketEnvelope v1, and the
+        // blocking note on P04-10 requires it stay off a real transport until it
+        // is. Building it every frame still proves the producer side and feeds
+        // the V2 smoke gate.
+        foreach (var combatantId in _schedulingHost!.Combatants)
+        {
+            if (_schedulingHost.BuildOwnerState(combatantId) is not { } publication)
+            {
+                continue;
+            }
+
+            _v2OwnerStatesBuilt++;
+            if (publication.HasMoreToPublish)
+            {
+                _v2OwnerStateBacklogs++;
+            }
+        }
     }
 
     public override void _PhysicsProcess(double delta)
@@ -278,7 +850,17 @@ public partial class NetworkArena : Node3D
             DrainClientAuthorityPacketsAtPhysicsBoundary();
         }
 
-        _simulationTick++;
+        // Under V2 the scheduling host owns frame advancement: one engine
+        // callback may run zero, one, or several fixed frames, so the counter is
+        // driven from each completed frame in BeginFrame rather than bumped once
+        // per callback. Everything downstream — pose history, snapshots, lag
+        // compensation — keys off _simulationTick and must see the frame being
+        // simulated, not the callback count.
+        if (_schedulingHost is null)
+        {
+            _simulationTick++;
+        }
+
         if (_mode == ArenaMode.Authority)
         {
             SimulateAuthority((float)delta);
@@ -333,6 +915,19 @@ public partial class NetworkArena : Node3D
             GD.Print(
                 $"[NetworkArena] {_mode} stopped at tick {_simulationTick}; " +
                 $"accepted inputs {_acceptedInputPackets}; accepted snapshots {_acceptedSnapshots}");
+            if (_schedulingHost is not null)
+            {
+                GD.Print(
+                    $"[NetworkArena] V2 scheduling summary; frames {_schedulingHost.LastCompletedFrame?.Tick ?? -1}; " +
+                    $"combatants {_schedulingHost.Combatants.Count}; " +
+                    $"remote admitted {_v2RemoteCommandsAdmitted}; " +
+                    $"remote duplicate {_v2RemoteCommandsDuplicate}; " +
+                    $"remote late {_v2RemoteCommandsLate}; " +
+                    $"remote refused {_v2RemoteCommandsRefused}; " +
+                    $"owner states {_v2OwnerStatesBuilt}; " +
+                    $"state backlogs {_v2OwnerStateBacklogs}; " +
+                    $"lead updates {_v2LeadUpdatesEmitted}");
+            }
         }
     }
 
@@ -452,6 +1047,16 @@ public partial class NetworkArena : Node3D
 
     private void SimulateAuthority(float delta)
     {
+        // V2 owns pacing and per-frame input resolution for the whole authority
+        // when selected. The branch is here rather than inside the per-combatant
+        // loop so the Legacy path below is reached only when Legacy is selected
+        // and is therefore unchanged by this integration.
+        if (_schedulingHost is not null)
+        {
+            SimulateAuthorityV2(delta);
+            return;
+        }
+
         _combat.AdvanceOneTick();
         var arenaTick = _simulationTick - _arenaStartedAtTick;
         if (_remoteCommitPhaseSmokeTest)
@@ -600,6 +1205,10 @@ public partial class NetworkArena : Node3D
             out var health);
         _lifeGenerations[HostCombatantId] = checked(
             _lifeGenerations[HostCombatantId] + 1);
+
+        // Life is part of OwnerIntentScope, so a respawn is an epoch change and
+        // the V2 scheduler and publisher must be rebuilt together for it.
+        QueueV2EpochRebuild(HostCombatantId);
         _localAvatar.ResetForRespawn(
             new Vector3(2f, 1f, 0f),
             _simulationTick,
@@ -1117,6 +1726,7 @@ public partial class NetworkArena : Node3D
             {
                 var health = result.Respawn!.After;
                 _lifeGenerations[pair.Key] = checked(_lifeGenerations[pair.Key] + 1);
+                QueueV2EpochRebuild(pair.Key);
                 _avatars[pair.Key].ResetForRespawn(
                     pair.Value.SpawnPosition,
                     _simulationTick,
@@ -1704,7 +2314,14 @@ public partial class NetworkArena : Node3D
                 continue;
             }
 
-            inputBuffer.Inputs.Enqueue(RevisionedMovementCommand.FromProtocol(frame));
+            if (_schedulingHost is not null)
+            {
+                AdmitRemoteOwnerCommandV2(player.CombatantId, frame);
+            }
+            else
+            {
+                inputBuffer.Inputs.Enqueue(RevisionedMovementCommand.FromProtocol(frame));
+            }
         }
 
         ObserveSnapshotAcknowledgement(

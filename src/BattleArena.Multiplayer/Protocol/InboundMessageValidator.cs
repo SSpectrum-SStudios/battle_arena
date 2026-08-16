@@ -128,9 +128,426 @@ public readonly record struct OwnerControlDraftValidationContext(
             ProtocolConstants.OwnerCollisionContentHashBytes;
 }
 
+/// <summary>
+/// Receive context for one authority owner state message, supplied by the client
+/// that is about to apply it.
+/// </summary>
+/// <remarks>
+/// <para>
+/// The message itself is evidence, not trust. This validator owns every check,
+/// including the ones checkable from the bytes alone.
+/// <c>AuthorityOwnerStateMapper.FromProtocol</c> enforces many of the same rules,
+/// but it <em>throws</em>, and this is an ingress path: a hostile packet must
+/// produce a classified violation rather than an exception, so validation runs
+/// first and the mapper's guards become a redundant backstop rather than the
+/// primary gate.
+/// </para>
+/// <para>
+/// That distinction is not theoretical. Both defects found in the P04-08 receive
+/// window were context-relative: one acknowledged sequences below the consumption
+/// cursor that were still live, and one acknowledged sequences the owner had
+/// never sent. Neither is detectable from the message in isolation, and the
+/// second is exactly what
+/// <see cref="OwnerPrediction.OwnerInputSendWindow.ApplyAuthorityProgress"/>
+/// already refuses.
+/// </para>
+/// </remarks>
+/// <remarks>
+/// <para>
+/// <c>NegotiatedSimulationTicksPerSecond</c> is deliberately absent, unlike
+/// <see cref="OwnerControlDraftValidationContext"/>: the lead bounds here are
+/// already frame counts, so the rate would be unused.
+/// </para>
+/// </remarks>
+public readonly record struct AuthorityOwnerStateDraftValidationContext(
+    OwnerPredictionDraftScopeExpectation ExpectedScope,
+    ulong HighestAuthorityFramePublished,
+    ulong EarliestRetainedTargetTick,
+    ulong HighestOriginatedInputSequence,
+    OwnerKnownJournalIdentityWindow KnownTransitionIds,
+    ulong MaximumPermittedTransitionId,
+    OwnerKnownJournalIdentityWindow KnownActionIds,
+    ulong MaximumPermittedActionId,
+    ulong AppliedTransitionResolutionCursor,
+    ulong MaximumPermittedTransitionResolutionSequence,
+    ulong AppliedActionResolutionCursor,
+    ulong MaximumPermittedActionResolutionSequence,
+    ulong EarliestPermittedLeadEffectiveTick,
+    uint MinimumLeadFrames,
+    uint MaximumLeadFrames)
+{
+    public bool IsValid =>
+        ExpectedScope.IsValid &&
+        HighestAuthorityFramePublished <= long.MaxValue &&
+        EarliestRetainedTargetTick <= HighestAuthorityFramePublished &&
+        KnownTransitionIds.IsValid &&
+        KnownTransitionIds.IsBoundedBy(MaximumPermittedTransitionId) &&
+        KnownActionIds.IsValid &&
+        KnownActionIds.IsBoundedBy(MaximumPermittedActionId) &&
+        AppliedTransitionResolutionCursor <=
+            MaximumPermittedTransitionResolutionSequence &&
+        AppliedActionResolutionCursor <= MaximumPermittedActionResolutionSequence &&
+        EarliestPermittedLeadEffectiveTick > HighestAuthorityFramePublished &&
+        EarliestPermittedLeadEffectiveTick <= long.MaxValue &&
+        MinimumLeadFrames != 0 &&
+        MinimumLeadFrames <= MaximumLeadFrames &&
+        MaximumLeadFrames <= ProtocolConstants.MaxOwnerPredictionLeadFrames;
+}
+
 public sealed class InboundMessageValidator
 {
     private const float HalfPi = MathF.PI / 2f;
+
+    /// <summary>
+    /// Validates one authority owner state message against the receiving
+    /// client's context.
+    /// </summary>
+    /// <remarks>
+    /// Checks, in the order failures should be attributed:
+    /// <list type="number">
+    /// <item>every embedded submessage is present, since proto3 omits an unset
+    /// message and the mapper would otherwise dereference null;</item>
+    /// <item>all <em>four</em> embedded scope copies agree with each other and
+    /// with the expectation — the message body, the receive acknowledgement, the
+    /// consumption acknowledgement, and the lead update each carry one, and only
+    /// treating their agreement as an invariant makes the redundancy
+    /// load-bearing rather than a spoofing surface;</item>
+    /// <item>collection sizes are within
+    /// <see cref="ProtocolConstants.MaxOwnerRecentInputDispositions"/> and
+    /// <see cref="ProtocolConstants.MaxOwnerJournalEntriesPerBatch"/>;</item>
+    /// <item>every enum value is defined and not the zero/unspecified member;</item>
+    /// <item>disposition kind and input-sequence presence agree: exactly the
+    /// received-command kind carries a sequence;</item>
+    /// <item>dispositions are strictly ascending by frame, contiguous, and end at
+    /// the consumed cursor, so a gap cannot hide a frame that was never
+    /// resolved;</item>
+    /// <item>the represented frame is coherent with the consumed cursor: it is
+    /// the newest resolved frame, so it may not exceed
+    /// <c>consumed_through_simulation_tick</c> nor sit below the oldest retained
+    /// disposition;</item>
+    /// <item>every tick lies inside the retained/published authority window;</item>
+    /// <item>the receive acknowledgement claims no sequence beyond
+    /// <c>HighestOriginatedInputSequence</c>;</item>
+    /// <item>every resolution names a transition or action identity this client
+    /// actually originated. Without this one forged resolution reaches the
+    /// journal's unknown-identity branch and forces a full baseline repair, which
+    /// is the cheapest amplification vector in the message;</item>
+    /// <item>resolution cursors never move backward relative to the ones this
+    /// client has already applied, and never exceed the maximum sequence the
+    /// authority could have issued — an inflated cursor is permanent poison,
+    /// because the client then discards every genuine resolution as stale;</item>
+    /// <item>each resolution's own sequence is at or below the corresponding
+    /// advertised <c>latest_*_resolution_sequence</c>;</item>
+    /// <item>the lead target lies inside the negotiated policy and its effective
+    /// frame is at or beyond <c>EarliestPermittedLeadEffectiveTick</c>, which
+    /// accounts for the notice bound and already-scheduled commands. Checking
+    /// only against published authority time would admit updates the P03-08
+    /// client gate then refuses.</item>
+    /// </list>
+    /// </remarks>
+    public ProtocolValidationResult ValidateAuthorityOwnerStateDraft(
+        AuthorityOwnerStateDraft state,
+        AuthorityOwnerStateDraftValidationContext context)
+    {
+        ArgumentNullException.ThrowIfNull(state);
+        if (!context.IsValid)
+        {
+            throw new ArgumentOutOfRangeException(nameof(context));
+        }
+
+        // 1. Presence. proto3 omits an unset message, so every nested reference
+        // must be proven before it is read.
+        if (state.AppliedInput is null ||
+            state.ReceivedInputs is null ||
+            state.ReceivedInputs.ReceivedInputs is null ||
+            state.ConsumedInputs is null)
+        {
+            return Invalid(
+                ProtocolViolationCode.MalformedPayload,
+                "Authority owner state is missing a required submessage.");
+        }
+
+        // 2. All four scope copies. Checking fewer leaves the unchecked one as a
+        // spoofing surface; the lead update is optional, but when present its
+        // scope is held to the same expectation.
+        var requiredScopes = new[]
+        {
+            state.Scope,
+            state.ReceivedInputs.Scope,
+            state.ConsumedInputs.Scope,
+        };
+        foreach (var scope in requiredScopes)
+        {
+            var scopeResult = ValidateOwnerScope(scope, context.ExpectedScope);
+            if (!scopeResult.IsValid)
+            {
+                return scopeResult;
+            }
+        }
+        if (state.LeadUpdate is not null)
+        {
+            var leadScopeResult = ValidateOwnerScope(
+                state.LeadUpdate.Scope,
+                context.ExpectedScope);
+            if (!leadScopeResult.IsValid)
+            {
+                return leadScopeResult;
+            }
+        }
+
+        // 3. Collection bounds, shared with the mapper so the wire bound is
+        // single-sourced.
+        if (state.ConsumedInputs.RecentDispositions.Count >
+                ProtocolConstants.MaxOwnerRecentInputDispositions ||
+            state.TransitionResolutions.Count >
+                ProtocolConstants.MaxOwnerJournalEntriesPerBatch ||
+            state.ActionResolutions.Count >
+                ProtocolConstants.MaxOwnerJournalEntriesPerBatch)
+        {
+            return Invalid(
+                ProtocolViolationCode.InvalidCollectionCount,
+                "Authority owner state exceeds a bounded disposition or resolution count.");
+        }
+
+        // 4-7. Applied input, then the disposition history it sits at the head of.
+        var appliedResult = ValidateOwnerStateDisposition(state.AppliedInput, context);
+        if (!appliedResult.IsValid)
+        {
+            return appliedResult;
+        }
+
+        var consumedThrough = state.ConsumedInputs.HasConsumedThroughSimulationTick
+            ? state.ConsumedInputs.ConsumedThroughSimulationTick
+            : (ulong?)null;
+        if (consumedThrough is { } consumed &&
+            (consumed > context.HighestAuthorityFramePublished ||
+             state.AppliedInput.TargetSimulationTick > consumed))
+        {
+            return Invalid(
+                ProtocolViolationCode.InvalidNumericValue,
+                "The represented frame must not exceed the consumed cursor or published time.");
+        }
+
+        ulong? previousTick = null;
+        foreach (var disposition in state.ConsumedInputs.RecentDispositions)
+        {
+            var result = ValidateOwnerStateDisposition(disposition, context);
+            if (!result.IsValid)
+            {
+                return result;
+            }
+            if (previousTick is { } previous &&
+                disposition.TargetSimulationTick != previous + 1)
+            {
+                return Invalid(
+                    ProtocolViolationCode.InvalidNumericValue,
+                    "Recent dispositions must be contiguous and strictly ascending by frame.");
+            }
+            previousTick = disposition.TargetSimulationTick;
+        }
+        if (previousTick is { } newest && consumedThrough is { } cursor && newest != cursor)
+        {
+            return Invalid(
+                ProtocolViolationCode.InvalidNumericValue,
+                "The newest retained disposition must be the consumed cursor.");
+        }
+
+        // 8. The receive acknowledgement may not claim unoriginated input.
+        var received = new OwnerKnownJournalIdentityWindow(
+            state.ReceivedInputs.ReceivedInputs.HasHighestContiguousSequence
+                ? state.ReceivedInputs.ReceivedInputs.HighestContiguousSequence
+                : null,
+            state.ReceivedInputs.ReceivedInputs.Following64ReceivedMask);
+        if (!received.IsValid ||
+            !received.IsBoundedBy(context.HighestOriginatedInputSequence))
+        {
+            return Invalid(
+                ProtocolViolationCode.InvalidSequence,
+                "The receive acknowledgement claims an input sequence this owner never originated.");
+        }
+
+        // 9-11. Journal resolutions: known identities, bounded and monotonic
+        // cursors, and per-entry coherence with the advertised latest sequence.
+        var transitionLatest = state.HasLatestTransitionResolutionSequence
+            ? state.LatestTransitionResolutionSequence
+            : (ulong?)null;
+        var transitionCursor = ValidateOwnerStateResolutionCursor(
+            transitionLatest,
+            context.AppliedTransitionResolutionCursor,
+            context.MaximumPermittedTransitionResolutionSequence,
+            "transition");
+        if (!transitionCursor.IsValid)
+        {
+            return transitionCursor;
+        }
+
+        foreach (var resolution in state.TransitionResolutions)
+        {
+            if (!Enum.IsDefined(resolution.Outcome) ||
+                resolution.Outcome == MovementTransitionOutcomeDraft.Unspecified ||
+                !Enum.IsDefined(resolution.RejectionReason))
+            {
+                return Invalid(
+                    ProtocolViolationCode.InvalidEnumValue,
+                    "A transition resolution carries an undefined outcome or reason.");
+            }
+            if (!context.KnownTransitionIds.Contains(resolution.TransitionId))
+            {
+                return Invalid(
+                    ProtocolViolationCode.InvalidSequence,
+                    "A transition resolution names an identity this owner never originated.");
+            }
+            if (resolution.ResolutionSequence == 0 ||
+                resolution.ResolutionSequence >
+                    (transitionLatest ?? context.MaximumPermittedTransitionResolutionSequence) ||
+                resolution.DecisionTick > context.HighestAuthorityFramePublished)
+            {
+                return Invalid(
+                    ProtocolViolationCode.InvalidSequence,
+                    "A transition resolution is out of range for its advertised cursor or time.");
+            }
+        }
+
+        var actionLatest = state.HasLatestActionResolutionSequence
+            ? state.LatestActionResolutionSequence
+            : (ulong?)null;
+        var actionCursor = ValidateOwnerStateResolutionCursor(
+            actionLatest,
+            context.AppliedActionResolutionCursor,
+            context.MaximumPermittedActionResolutionSequence,
+            "action");
+        if (!actionCursor.IsValid)
+        {
+            return actionCursor;
+        }
+
+        foreach (var resolution in state.ActionResolutions)
+        {
+            if (!Enum.IsDefined(resolution.Outcome) ||
+                resolution.Outcome == PredictedActionOutcomeDraft.Unspecified ||
+                !Enum.IsDefined(resolution.RejectionReason))
+            {
+                return Invalid(
+                    ProtocolViolationCode.InvalidEnumValue,
+                    "An action resolution carries an undefined outcome or reason.");
+            }
+            if (!context.KnownActionIds.Contains(resolution.ActionId))
+            {
+                return Invalid(
+                    ProtocolViolationCode.InvalidSequence,
+                    "An action resolution names an identity this owner never originated.");
+            }
+            if (resolution.ResolutionSequence == 0 ||
+                resolution.ResolutionSequence >
+                    (actionLatest ?? context.MaximumPermittedActionResolutionSequence) ||
+                resolution.DecisionTick > context.HighestAuthorityFramePublished)
+            {
+                return Invalid(
+                    ProtocolViolationCode.InvalidSequence,
+                    "An action resolution is out of range for its advertised cursor or time.");
+            }
+
+            var applied = resolution.Outcome is PredictedActionOutcomeDraft.Accepted or
+                PredictedActionOutcomeDraft.Remapped;
+            if (applied != resolution.HasAuthorityExecutionId ||
+                (applied && resolution.AuthorityExecutionId == 0))
+            {
+                return Invalid(
+                    ProtocolViolationCode.InvalidSequence,
+                    "Exactly an accepted or remapped action carries an authority execution.");
+            }
+        }
+
+        // 12. Lead policy.
+        if (state.LeadUpdate is { } lead)
+        {
+            if (lead.TargetLeadFrames < context.MinimumLeadFrames ||
+                lead.TargetLeadFrames > context.MaximumLeadFrames)
+            {
+                return Invalid(
+                    ProtocolViolationCode.InvalidNumericValue,
+                    "The advertised prediction lead is outside the negotiated policy.");
+            }
+            if (lead.LeadPolicyRevision == 0 ||
+                lead.EffectiveTick < context.EarliestPermittedLeadEffectiveTick)
+            {
+                return Invalid(
+                    ProtocolViolationCode.InvalidNumericValue,
+                    "The lead update is unrevisioned or takes effect too soon to schedule.");
+            }
+        }
+
+        return ProtocolValidationResult.Valid;
+    }
+
+    /// <summary>
+    /// One disposition: defined kind, a frame inside retained authority time, and
+    /// a sequence present exactly when the kind is a received command.
+    /// </summary>
+    private static ProtocolValidationResult ValidateOwnerStateDisposition(
+        OwnerInputFrameDispositionDraft disposition,
+        AuthorityOwnerStateDraftValidationContext context)
+    {
+        if (!Enum.IsDefined(disposition.Kind) ||
+            disposition.Kind == OwnerInputFrameDispositionKindDraft.Unspecified)
+        {
+            return Invalid(
+                ProtocolViolationCode.InvalidEnumValue,
+                "An input frame disposition carries an undefined kind.");
+        }
+        if (disposition.TargetSimulationTick > context.HighestAuthorityFramePublished ||
+            disposition.TargetSimulationTick < context.EarliestRetainedTargetTick)
+        {
+            return Invalid(
+                ProtocolViolationCode.InvalidNumericValue,
+                "An input frame disposition names a frame outside retained authority time.");
+        }
+
+        var usedOwnerCommand =
+            disposition.Kind == OwnerInputFrameDispositionKindDraft.ReceivedCommand;
+        if (usedOwnerCommand != disposition.HasInputSequence)
+        {
+            return Invalid(
+                ProtocolViolationCode.InvalidSequence,
+                "Exactly a received-command disposition carries the input sequence it applied.");
+        }
+        if (disposition.HasInputSequence &&
+            (disposition.InputSequence == 0 ||
+             disposition.InputSequence > context.HighestOriginatedInputSequence))
+        {
+            return Invalid(
+                ProtocolViolationCode.InvalidSequence,
+                "A disposition claims an input sequence this owner never originated.");
+        }
+
+        return ProtocolValidationResult.Valid;
+    }
+
+    private static ProtocolValidationResult ValidateOwnerStateResolutionCursor(
+        ulong? advertised,
+        ulong appliedCursor,
+        ulong maximumIssued,
+        string streamName)
+    {
+        if (advertised is not { } cursor)
+        {
+            return ProtocolValidationResult.Valid;
+        }
+        if (cursor == 0 || cursor > maximumIssued)
+        {
+            return Invalid(
+                ProtocolViolationCode.InvalidSequence,
+                $"The advertised {streamName} resolution cursor exceeds what authority could issue.");
+        }
+        if (cursor < appliedCursor)
+        {
+            return Invalid(
+                ProtocolViolationCode.InvalidSequence,
+                $"The advertised {streamName} resolution cursor moved backward.");
+        }
+
+        return ProtocolValidationResult.Valid;
+    }
 
     public ProtocolValidationResult ValidateOwnerCommandBatchDraft(
         OwnerCommandBatchDraft batch,

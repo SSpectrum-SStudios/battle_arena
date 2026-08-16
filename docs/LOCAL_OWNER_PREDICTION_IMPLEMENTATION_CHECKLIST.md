@@ -10,19 +10,43 @@ Every checkbox is an independently reviewable change with one declared purpose.
 The listed files are the intended scope, with three files as the normal maximum;
 generated files or an unavoidable integration seam may increase that count.
 
-A step becomes `[x]` only after:
+Later work must not silently broaden an earlier step. Discovered work is added as
+a new checkbox rather than folded into the active one.
 
-1. its implementation is complete;
-2. its listed focused verification passes;
-3. relevant regression gates pass;
-4. an independent critic checks the actual diff against this checklist and the
-   full redesign document;
-5. every critic finding is fixed and the critic returns `APPROVE` with no open
-   blocker.
+### Working pattern (adopted August 15, 2026)
+
+Phases 0-4 used a per-item critic: implement one item, review it, fix, mark.
+That found real defects but spent a full review cycle on every item. From Phase 5
+onward the reviews are batched per phase instead, because the redesign document
+and this checklist already carry the design detail a critic would otherwise have
+to rediscover each time.
+
+A phase now proceeds:
+
+1. **Plan** the whole phase — every class and function, recorded on the items
+   below before any code exists.
+2. **Stub** the whole phase, one subsection at a time, with documentation
+   comments stating what each type and member will do and why. Mark each
+   subsection `Stubbed`. No critic runs during this step.
+3. **Review the stubs** with one critic reading the entire phase. It is checking
+   that the decomposition and contracts are right, which does not require
+   implementation bodies.
+4. **Apply** any missing interfaces or contract corrections the critic found and
+   judged relevant. Mark every subsection `Stubs Reviewed`.
+5. **Implement** the whole phase, one subsection at a time. Mark each subsection
+   `Implemented`.
+6. **Review the implementation** with one critic, checking that the phase does
+   everything the phase was supposed to do.
+7. **Fix** the findings, which should be few. Mark each subsection
+   `Implemented And Reviewed` and set its `[x]`.
+8. **Commit and push** the completed phase as one commit before starting the
+   next phase.
+
+A subsection's status line records which of those states it has reached. A step
+becomes `[x]` only at step 7, and only when its listed focused verification and
+the relevant regression gates pass alongside the critic's approval.
 
 The active step is the first unchecked item whose prerequisites are complete.
-Later work must not silently broaden an earlier step. Discovered work is added as
-a new checkbox.
 
 ## Phase 0 — Safe Migration Boundary
 
@@ -915,13 +939,193 @@ a new checkbox.
     the sequence originated, is the lead inside the negotiated policy — need the
     receive context and are the validator's job. See P04-10.
 
-- [ ] **P04-09 — Integrate the scheduler behind the V2 feature flag.**
+- [x] **P04-09 — Integrate the scheduler behind the V2 feature flag.**
+  - Status: **Implemented And Reviewed**.
   - Purpose: Run exact scheduling in multiplayer composition without making V2
     the default or changing the legacy path.
-  - Target files: `NetworkArena.cs`, `AuthorityOwnerInputScheduler.cs`,
+  - Target files: `AuthorityOwnerSchedulingHost.cs`,
+    `AuthorityOwnerSchedulingHostTests.cs`, `NetworkArena.cs`,
     `verify_multiplayer_parity.ps1`.
   - Verification: Legacy parity stays green; V2 scheduler smoke accounts for
     every frame and both host/client use the scheduler.
+  - Planned decomposition. The composition lives in `BattleArena.Multiplayer`,
+    not in `NetworkArena`, so it is testable without Godot and so the 3,000-line
+    arena node does not absorb another subsystem. `NetworkArena` holds one host
+    and delegates.
+    - `PredictionRebaseDebouncer` — latches `RebaseRequired` so a persistent
+      condition emits one rebase rather than one per evaluation. Carried
+      constraint 1. Members: `TryClaim(SimulationInstant)`, `Release()`,
+      `IsLatched`.
+    - `AuthorityOwnerCombatantScheduling` — everything owned per controlled
+      combatant: scheduler, both authority journals, frame intent resolver,
+      lead controller, lead revision counter, rebase debouncer, and the
+      in-memory publisher when this combatant is the listen host. Rebuilt as a
+      unit on epoch change, which is carried constraint 2.
+    - `AuthorityOwnerSchedulingHost` — the composition root. One
+      `AuthoritySimulationClock` for match pacing plus one
+      `AuthorityOwnerCombatantScheduling` per combatant. Members:
+      `RegisterCombatant`, `RemoveCombatant`, `RebuildForEpoch`,
+      `TryAdmitRemoteCommand`, `PublishHostCommand`, `Advance`,
+      `ResolveFrame`, `CompleteFrame`, `EvaluateLead`, `BuildOwnerState`,
+      `TryGetScheduling`.
+    - `NetworkArena` seam — `ConfigureOwnerPredictionMode` stops throwing on
+      `FrameRewindV2` and builds the host; `SimulateAuthority` routes through
+      it when V2 is selected and is otherwise untouched. The node implements
+      `IAuthorityFrameSimulator` rather than driving the frame loop itself.
+  - Stub review changes, applied before implementation:
+    - Added `IAuthorityFrameSimulator` and moved the frame loop into
+      `RunDueFrames`. The host now drives every combatant through every due
+      frame and calls back; the caller cannot skip a combatant, resolve one
+      twice, complete an unsimulated frame, or admit a command mid-frame,
+      because it never gets the opportunity. Four ordering hazards became
+      structurally impossible instead of conventions to remember.
+    - Added `ResumeAfterMatchEpochReset` and `DemandTimelineReset`. The clock
+      can reset to a new `MatchFrameEpochId`, and that epoch is part of every
+      combatant's identity, so a reset invalidates all of them at once. Without
+      a match-wide rebuild the host was permanently unusable after the first
+      reset. This is the match-wide half of the rebuild-together rule.
+    - Added `TryObserveRemoteIntents`. A command carries only intent
+      *references*; the authority journals must observe the intent itself or
+      every reference resolves as not-observed and no transition or action is
+      ever applied. The wire batch carries them in separate fields precisely
+      for this, and the stub had no ingress for them.
+    - Added `AcknowledgeResolutions`. Without it terminal results are retained
+      and resent until the retention timeout latches a baseline repair.
+    - Added `AuthorityOwnerSchedulingContinuity`. `OwnerIntentScope` excludes
+      both the match-frame epoch and the authority discontinuity, so a teleport
+      or timeline rebase yields a new epoch over an *unchanged* journal
+      lifetime. Rebuilding from zero there restarts resolution sequences while
+      the client's applied cursor is ahead, so every new resolution is
+      discarded as stale, and restarts the lead revision, which the P03-08
+      client gate treats as contradictory and locks on.
+    - Deleted the duplicate lead-revision allocator.
+      `PredictionLeadController` already allocates and stamps the revision and
+      returns the finished update in `PredictionLeadEvaluation.Update`; the
+      stub had added a competing second source of both.
+    - `PredictionRebaseDebouncer` gained `ObserveRebaseNotRequired`. Low clock
+      confidence is transient and can recur with no epoch change, so releasing
+      only on rebuild would swallow every rebase demand after the first.
+    - `EvaluateLead` now takes only measured path and clock confidence; buffer
+      occupancy, starvation-since-last-evaluation, and last scheduled frame are
+      host-owned. `BuildOwnerState` dropped its lead-update parameter for the
+      same reason and returns `AuthorityOwnerStatePublication`, whose
+      `HasMoreToPublish` prevents silent truncation at the protocol bound.
+    - Owner state resolutions come from the journals' unacknowledged sets, not
+      the last frame's results, so frames resolved during a multi-frame
+      callback are not dropped.
+    - The listen host's input sequence is derived from the target frame by the
+      scheduling group. A node-side counter that advanced on a frame the host
+      did not publish — an eliminated frame taking the override path — would
+      break the scheduler's fixed sequence/frame offset and wedge host input
+      for the rest of the epoch.
+    - `AuthorityInputAdmissionFault` gained `UnknownCombatant` and
+      `FrameRunInProgress`, so those stay separable on the telemetry surface
+      instead of being flattened into `ForeignScope`.
+  - Open items to settle during implementation, raised by the stub review:
+    - Name the exact call sites for `RegisterCombatant`, `RemoveCombatant`, and
+      `RebuildForEpoch`. `BuildOwnerSchedulingHost` currently runs before
+      avatars spawn and before any peer joins, and respawn bumps
+      `_lifeGenerations`, which is an epoch change.
+    - Decide which frame counter is authoritative. `_simulationTick` increments
+      unconditionally once per `_PhysicsProcess`, while V2 may run zero, one, or
+      several frames; pose history, snapshots, and lag compensation all key off
+      it. V2 should drive it from the completed frame.
+    - Choose `capacityFrames` deliberately: it is the acceptance horizon, so
+      below the negotiated maximum lead it silently refuses legal commands.
+  - Implementation review findings, all fixed. The critic found two blockers,
+    both of which the unit tests could not have caught:
+    1. `SendOwnerLeadUpdatesV2` and `SendOwnerSchedulingStateV2` were left as
+       `NotImplementedException` stubs while `SimulateAuthorityV2` called them
+       on every callback that ran a frame, so selecting V2 threw out of
+       `_PhysicsProcess` before the first frame completed. Both are implemented.
+    2. No production caller routed remote commands into the scheduler, so under
+       V2 every remote combatant resolved from fallback and could not move.
+       `AdmitRemoteOwnerCommandV2` now bridges the legacy movement frame into an
+       owner command at authority ingress. This is explicitly a bridge:
+       `OwnerCommandBatchDraft` stays off `PacketEnvelope` v1 until the
+       coordinated protocol bump, so the legacy frame is the only remote owner
+       input on the wire today.
+    Also fixed: respawn advances the life generation, which is inside
+    `OwnerIntentScope` and therefore an epoch change, but `AdvanceRespawns` runs
+    inside `EndFrame` where rebuilding is refused — epoch rebuilds are now queued
+    there and drained before the next frame run. The admission counter folded
+    duplicates into refusals, which made a healthy link look broken, because a
+    client legitimately resends its recent history in every bundle; counting is
+    now by disposition.
+  - Added `verify_owner_prediction_v2_smoke.ps1`, wired into the parity gate.
+    This is the item that mattered: the V2 path is flag-gated and off by
+    default, so every existing gate ran straight past it, which is precisely how
+    a stubbed method inside the V2 frame loop survived a fully green parity run.
+    The gate selects V2 with `--owner-prediction-v2`, then asserts the scheduler
+    accounted for frames, registered both combatants, admitted real remote
+    commands with zero faulted refusals, and produced owner state. It caught two
+    further defects on its first runs: the V2 branch returned before the legacy
+    body's smoke exit so every V2 run hung forever, and the disposition
+    miscount. Current result: 75 frames, 2 combatants, 9 remote commands
+    admitted, 152 owner states.
+  - Verified: Multiplayer 951/951, Core 141/141, Godot build with only the two
+    pre-existing nullable warnings, and the full parity gate green including the
+    new V2 smoke.
+  - Note: the legacy `AuthorityMovementInputBuffer` stays in place and keeps
+    driving the Legacy path. This item adds a parallel path; it does not delete
+    the old one, which happens only when V2 becomes the default in a later phase.
+
+- [x] **P04-10 — Validate the authority owner state message.**
+  - Status: **Implemented And Reviewed**.
+  - Purpose: Bound and authenticate `AuthorityOwnerStateDraft` against receive
+    context, the way `InboundMessageValidator` already does for the owner
+    command/control drafts in P03-12.
+  - Target files: `InboundMessageValidator.cs`,
+    `InboundMessageValidatorTests.cs`, `ProtocolConstants.cs`.
+  - Verification: Valid boundaries pass; fuzzed unknown/oversized/spoofed/stale
+    messages fail with stable reasons, including a receive acknowledgement that
+    claims an unoriginated input sequence and a tick outside published authority
+    time.
+  - Planned decomposition, following the established validator shape exactly:
+    - `ProtocolConstants` — no new constants needed after all. Planning found
+      that `MaxOwnerRecentInputDispositions` and `MaxOwnerJournalEntriesPerBatch`
+      already exist and `AuthorityOwnerStateMapper` already sources its bounds
+      from them, so the validator reuses the same two and the wire bound stays
+      single-sourced. The file drops out of the target list.
+    - `AuthorityOwnerStateDraftValidationContext` — expected scope, highest
+      authority frame published, earliest retained frame, highest input sequence
+      the owner originated, current transition/action resolution cursors, and
+      the negotiated lead policy bounds. Mirrors
+      `OwnerControlDraftValidationContext`.
+    - `InboundMessageValidator.ValidateAuthorityOwnerStateDraft` — presence,
+      scope agreement, collection bounds, enum definedness, kind/sequence
+      coherence, frame windows, cursor monotonicity, and the context-relative
+      checks the P04-08 defects proved are needed.
+  - Stub review changes, applied before implementation:
+    - The message carries **four** scope copies, not three: the body, the
+      receive acknowledgement, the consumption acknowledgement, and the lead
+      update. Implemented as three, a spoofed `lead_update.scope` passes.
+    - Added known/permitted transition and action identity windows to the
+      context, mirroring `OwnerCommandDraftValidationContext`. A resolution
+      naming an ID the client never originated reaches the journal's
+      unknown-identity branch and forces a full baseline repair — the cheapest
+      amplification vector in the message, and context-relative, so only this
+      validator can catch it.
+    - Added upper bounds on both resolution cursors plus a per-entry coherence
+      check against the advertised `latest_*_resolution_sequence`. An inflated
+      cursor is permanent poison: the client then discards every genuine
+      resolution as stale.
+    - Added `EarliestPermittedLeadEffectiveTick`. Checking the effective frame
+      only against published authority time is weaker than the P03-08 client
+      gate, which also requires it beyond the notice bound and any scheduled
+      command, so the validator would have admitted updates the gate refuses.
+    - Added a represented-frame/consumed-cursor coherence rule, which the
+      original check list left undecided.
+    - Corrected the opening remark: this validator owns every check including
+      the message-alone ones. `AuthorityOwnerStateMapper.FromProtocol` enforces
+      many of the same rules but *throws*, and on an ingress path a hostile
+      packet must yield a classified violation, so validation runs first and
+      the mapper becomes a redundant backstop.
+  - Blocking note: P04-09 must not route this message on a real transport before
+    this item lands. The two receive-window defects found during P04-08 were both
+    context-relative violations, which is exactly the class only this validator
+    can catch. Ordered after P04-09 because it is discovered work, but either
+    order is fine provided the routing constraint holds.
   - Carried-forward constraints, gathered from P04-05 through P04-08:
     1. Debounce `PredictionLeadController`'s `RebaseRequired`. It repeats on
        every evaluation while its condition persists, and a rebase is heavier
@@ -936,22 +1140,6 @@ a new checkbox.
     4. Do not route `AuthorityOwnerStateDraft` on a real transport until P04-10
        lands. Its decode path fails closed on everything checkable from the
        message alone, but nothing yet validates it against receive context.
-
-- [ ] **P04-10 — Validate the authority owner state message.**
-  - Purpose: Bound and authenticate `AuthorityOwnerStateDraft` against receive
-    context, the way `InboundMessageValidator` already does for the owner
-    command/control drafts in P03-12.
-  - Target files: `InboundMessageValidator.cs`,
-    `InboundMessageValidatorTests.cs`, `ProtocolConstants.cs`.
-  - Verification: Valid boundaries pass; fuzzed unknown/oversized/spoofed/stale
-    messages fail with stable reasons, including a receive acknowledgement that
-    claims an unoriginated input sequence and a tick outside published authority
-    time.
-  - Blocking note: P04-09 must not route this message on a real transport before
-    this item lands. The two receive-window defects found during P04-08 were both
-    context-relative violations, which is exactly the class only this validator
-    can catch. Ordered after P04-09 because it is discovered work, but either
-    order is fine provided the routing constraint holds.
 
 ## Phase 5 — Explicit-State Kinematic Motor
 
@@ -1541,6 +1729,12 @@ mistaken for regressions by a later session.
     and have already cost several false alarms during Phase 4.
   - Affected tests: `PredictionPerformanceProbeTests.MemoryLayoutMatchesStateCommandResultAndDependencyOwnership`,
     `PredictionPerformanceProbeTests.AllocationScopesCannotCollapseUnknownNativeMemoryToZero`,
-    `PredictedCueLedgerTests.FixedStepCueOperationsAllocateNothingAfterWarmup`.
+    `PredictedCueLedgerTests.FixedStepCueOperationsAllocateNothingAfterWarmup`,
+    `PredictionTelemetryRingTests.ConcreteEnumerationAndSpanCopyDoNotAllocate`.
+  - The fourth was found during P04-09: adding roughly thirty tests changed
+    execution order and it began failing on full runs while passing in isolation
+    and on rerun. That is direct evidence the family is order-dependent rather
+    than cold-start-dependent, and that the set will keep growing as the suite
+    does.
   - Verification: The full multiplayer suite passes on a cold run immediately
     after a clean build, repeatedly, without per-test ordering assumptions.

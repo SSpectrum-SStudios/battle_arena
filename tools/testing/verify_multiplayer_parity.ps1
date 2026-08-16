@@ -156,13 +156,21 @@ try {
         throw "Godot reported an error during the parity smoke test.`n$hostLog`n$clientLog"
     }
 
+    # V2 exact-scheduling smoke. The V2 path is flag-gated and off by default,
+    # so without this gate nothing executes it and a stubbed-out method inside it
+    # can pass every other check in this file.
+    $v2Port = if ($Port -lt 65534) { $Port + 2 } else { $Port - 2 }
+    & (Join-Path $PSScriptRoot "verify_owner_prediction_v2_smoke.ps1") `
+        -GodotExecutable $GodotExecutable `
+        -Port $v2Port
+
     $threePlayerPort = if ($Port -lt 65535) { $Port + 1 } else { $Port - 1 }
     & (Join-Path $PSScriptRoot "verify_three_player_movement.ps1") `
         -GodotExecutable $GodotExecutable `
         -Port $threePlayerPort `
         -SkipBuild
 
-    Write-Host "Multiplayer parity gate passed: build, core tests, protocol tests, authority-only fallback, three-player movement, prediction, attack, and authoritative damage."
+    Write-Host "Multiplayer parity gate passed: build, core tests, protocol tests, authority-only fallback, V2 exact-scheduling smoke, three-player movement, prediction, attack, and authoritative damage."
 }
 finally {
     foreach ($process in @($clientProcess, $hostProcess)) {

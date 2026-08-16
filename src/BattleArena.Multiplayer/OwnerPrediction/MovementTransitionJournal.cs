@@ -719,6 +719,25 @@ public sealed class AuthorityMovementTransitionJournal
                 new TransitionResolutionSequence(_lastAcknowledgedResolution));
 
     /// <summary>
+    /// The sequence the next terminal result will carry, or zero when the
+    /// numbering is exhausted. Read-only; used to carry resolution numbering
+    /// across a rebuild that does not change the owner intent scope, where
+    /// restarting at one would make the client discard every new resolution as
+    /// stale.
+    /// </summary>
+    internal ulong NextResolutionSequenceValue => _nextResolutionSequence;
+
+    /// <summary>
+    /// Highest contiguously observed transition identity, or null when none has
+    /// been observed. Carried across a same-scope rebuild so an already-seen
+    /// identity is not treated as new.
+    /// </summary>
+    internal MovementTransitionId? HighestContiguousObservedTransitionId =>
+        _highestContiguousObservedTransition == 0
+            ? null
+            : new MovementTransitionId(_highestContiguousObservedTransition);
+
+    /// <summary>
     /// Restores empty authority journal counters from an authenticated baseline.
     /// It intentionally cannot represent active intents or unacknowledged
     /// tombstones; those require the later full bootstrap-state contract.

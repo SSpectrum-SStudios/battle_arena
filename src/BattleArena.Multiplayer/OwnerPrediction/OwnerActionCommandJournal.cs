@@ -757,6 +757,21 @@ public sealed class AuthorityOwnerActionCommandJournal
                 _scope,
                 new ActionResolutionSequence(_lastAcknowledgedResolution));
 
+    /// <summary>
+    /// The sequence the next terminal result will carry, or zero when the
+    /// numbering is exhausted. Read-only; carried across a same-scope rebuild.
+    /// </summary>
+    internal ulong NextResolutionSequenceValue => _nextResolutionSequence;
+
+    /// <summary>
+    /// Highest contiguously observed action identity, or null when none has been
+    /// observed. Carried across a same-scope rebuild.
+    /// </summary>
+    internal PredictedActionId? HighestContiguousObservedActionId =>
+        _highestContiguousObservedAction == 0
+            ? null
+            : new PredictedActionId(_highestContiguousObservedAction);
+
     public static AuthorityOwnerActionCommandJournal RestoreEmptyBaseline(
         OwnerIntentScope scope,
         OwnerActionJournalPolicy policy,
