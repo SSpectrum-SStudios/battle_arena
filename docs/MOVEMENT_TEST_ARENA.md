@@ -107,3 +107,26 @@ object. The animation is timed against the simulated maximum roll; releasing
 after the minimum exits early, while holding allows the full presentation and
 farther simulated travel. Animation and imported root motion never change
 authoritative displacement.
+
+## Switching motors
+
+The player node exports `MotorMode`, which selects which motor drives movement:
+
+- **Legacy** (default) — the accepted Godot driver, using `MoveAndSlide` against
+  a live `CharacterBody3D`. The arena behaves exactly as it always has.
+- **ExplicitQueryMotor** — the Phase 5 explicit-state kinematic motor, resolving
+  motion from replayable value state through explicit-transform queries.
+
+Both modes read the same authored `movement.json`, so switching changes only how
+the resulting motion is integrated against the world. Any difference in feel is
+therefore the motor's doing and not a difference in tuning, which is what makes
+the comparison worth running at all.
+
+The selected mode is printed at startup as
+`[MovementTestPlayer] Motor mode: <mode>`, so a headless run records which motor
+produced its trace.
+
+Under `ExplicitQueryMotor` the node is positioned *from* simulation each frame
+and nothing reads the body transform back into state. That inversion is the point
+of the phase: it is what allows a past frame to be restored and resimulated
+without moving the character the player is looking at.

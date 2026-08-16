@@ -2,6 +2,7 @@
 
 using BattleArena.Core.Common;
 using BattleArena.Core.Movement;
+using BattleArena.Core.Movement.Simulation;
 using BattleArena.Presentation;
 using BattleArena.VerticalSlice;
 using Godot;
@@ -34,7 +35,26 @@ public partial class MovementTestPlayer : CharacterBody3D
     [Export(PropertyHint.Range, "-1000,-1,1")]
     public float ResetHeight { get; set; } = -15f;
 
+    /// <summary>
+    /// Which motor drives this player.
+    /// </summary>
+    /// <remarks>
+    /// The offline arena is where movement feel is judged, so being able to
+    /// switch motors here — without changing a single authored attribute — is
+    /// what makes "does the explicit motor still feel right" an answerable
+    /// question rather than an opinion. Legacy stays the default so the arena
+    /// behaves as before unless the switch is deliberately thrown.
+    /// </remarks>
+    [Export]
+    public MovementTestMotorMode MotorMode { get; set; } = MovementTestMotorMode.Legacy;
+
     private GodotCharacterMovementDriver _movementDriver = null!;
+    private GodotKinematicCollisionWorld? _collisionWorld;
+    private CharacterMovementSimulator? _explicitSimulator;
+    private CharacterSimulationState _explicitState;
+    private MovementAttributeSnapshot _attributes = null!;
+    private MovementCapabilitySnapshot _capabilities = null!;
+    private CapsuleMotionOutcome _lastExplicitOutcome = CapsuleMotionOutcome.Completed;
     private Node3D _visualRoot = null!;
     private RiggedCharacterView _characterView = null!;
     private Node3D _cameraYaw = null!;
@@ -73,6 +93,14 @@ public partial class MovementTestPlayer : CharacterBody3D
             attributes,
             new SimulationRate(Engine.PhysicsTicksPerSecond),
             MovementRuntimeState.CreateGrounded(SimulationInstant.Zero));
+        _attributes = attributes;
+        _capabilities = MovementCapabilitySnapshot.CreateBaseFighter(1);
+        if (MotorMode == MovementTestMotorMode.ExplicitQueryMotor)
+        {
+            BuildExplicitMotor();
+        }
+
+        GD.Print($"[MovementTestPlayer] Motor mode: {MotorMode}");
         _spawnTransform = GlobalTransform;
         _visualRootBasePosition = _visualRoot.Position;
         _cameraYawBasePosition = _cameraYaw.Position;
@@ -162,6 +190,114 @@ public partial class MovementTestPlayer : CharacterBody3D
         }
     }
 
+    /// <summary>
+    /// Creates the explicit motor and seeds its state from the node's current
+    /// transform.
+    /// </summary>
+    /// <remarks>
+    /// Seeding from the node happens exactly once. From here on the simulation
+    /// state is the source of truth and the node follows it, which is the whole
+    /// inversion this phase performs.
+    /// </remarks>
+    private void BuildExplicitMotor()
+    {
+        _collisionWorld = new GodotKinematicCollisionWorld();
+        AddChild(_collisionWorld);
+        _collisionWorld.Initialize(
+            CollisionProfileTable.FromAttributes(_attributes),
+            staticWorldMask: CollisionMask);
+        _collisionWorld.SetWalkableSlope(_attributes.Ground.MaximumFloorAngleRadians);
+
+        _explicitSimulator = new CharacterMovementSimulator(
+            new CapsuleMovementSimulator(_collisionWorld),
+            new MovementSourceSimulator());
+        _explicitState = CharacterSimulationState.CreateGrounded(
+            new WorldPosition(GlobalPosition.X, GlobalPosition.Y, GlobalPosition.Z),
+            _viewYaw,
+            SimulationInstant.Zero,
+            new MovementConfigurationRevision(1),
+            new MovementCapabilityRevision(1));
+    }
+
+    /// <summary>
+    /// Advances the explicit motor one frame and moves the node to follow it.
+    /// </summary>
+    /// <remarks>
+    /// The node is positioned from simulation rather than the reverse. Nothing
+    /// reads the body's transform back into state, which is what makes the frame
+    /// replayable.
+    /// </remarks>
+    private void SimulateExplicitMotor(MovementCommand command, SimulationInstant now)
+    {
+        var input = new CharacterSimulationInput(
+            MovementAxes.FromUnitVector(command.Movement),
+            ViewOrientation.FromRadians(command.ViewYawRadians, command.ViewPitchRadians),
+            new MovementHeldState(HeldFrom(command.HeldButtons)),
+            default,
+            default,
+            default,
+            new MovementConfigurationRevision(1),
+            new MovementCapabilityRevision(1));
+
+        Span<MovementTransitionKindTag> transitions = stackalloc MovementTransitionKindTag[4];
+        var count = 0;
+        if (command.WasPressed(MovementButtons.Jump))
+        {
+            transitions[count++] = MovementTransitionKindTag.JumpPressed;
+        }
+        if (command.WasReleased(MovementButtons.Jump))
+        {
+            transitions[count++] = MovementTransitionKindTag.JumpReleased;
+        }
+        if (command.WasPressed(MovementButtons.CrouchOrRoll))
+        {
+            transitions[count++] = MovementTransitionKindTag.CrouchOrRollPressed;
+        }
+        if (command.WasReleased(MovementButtons.CrouchOrRoll))
+        {
+            transitions[count++] = MovementTransitionKindTag.CrouchOrRollReleased;
+        }
+
+        var result = _explicitSimulator!.Simulate(
+            _explicitState,
+            input,
+            transitions[..count],
+            SimulationStepContext.Current(now, new SimulationRate(Engine.PhysicsTicksPerSecond)),
+            _attributes,
+            _capabilities);
+
+        _explicitState = result.State;
+        _lastExplicitOutcome = result.Outcome;
+        _lastStepOutcome = result.Outcome == CapsuleMotionOutcome.Stepped
+            ? StepTraversalOutcome.Accepted
+            : StepTraversalOutcome.NotNeeded;
+
+        var position = _explicitState.Kinematic.Position;
+        GlobalPosition = new Vector3((float)position.X, (float)position.Y, (float)position.Z);
+        Velocity = new Vector3(
+            (float)_explicitState.Kinematic.HorizontalVelocity.X,
+            (float)_explicitState.Kinematic.VerticalVelocity,
+            (float)_explicitState.Kinematic.HorizontalVelocity.Z);
+    }
+
+    private static MovementHeldButtons HeldFrom(MovementButtons buttons)
+    {
+        var held = MovementHeldButtons.None;
+        if (buttons.HasFlag(MovementButtons.Jump))
+        {
+            held |= MovementHeldButtons.Jump;
+        }
+        if (buttons.HasFlag(MovementButtons.Sprint))
+        {
+            held |= MovementHeldButtons.Sprint;
+        }
+        if (buttons.HasFlag(MovementButtons.CrouchOrRoll))
+        {
+            held |= MovementHeldButtons.CrouchOrRoll;
+        }
+        return held;
+    }
+
     public override void _PhysicsProcess(double delta)
     {
         if (GlobalPosition.Y < ResetHeight)
@@ -239,7 +375,15 @@ public partial class MovementTestPlayer : CharacterBody3D
             released);
 
         var heightBeforeMove = GlobalPosition.Y;
-        _lastStepOutcome = _movementDriver.Simulate(command, delta);
+        if (_explicitSimulator is not null)
+        {
+            SimulateExplicitMotor(command, now);
+        }
+        else
+        {
+            _lastStepOutcome = _movementDriver.Simulate(command, delta);
+        }
+
         if (_lastStepOutcome == StepTraversalOutcome.Accepted)
         {
             _stepPresentationOffset += heightBeforeMove - GlobalPosition.Y;

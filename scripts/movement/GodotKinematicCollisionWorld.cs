@@ -32,6 +32,11 @@ namespace BattleArena.Movement;
 /// </remarks>
 public sealed partial class GodotKinematicCollisionWorld : Node3D, ICharacterCollisionWorld
 {
+    private readonly Dictionary<CollisionProfileKind, ProfileBody> _profiles = [];
+    private readonly PhysicsTestMotionResult3D _result = new();
+    private PhysicsTestMotionParameters3D _parameters = new();
+    private bool _initialized;
+
     /// <summary>
     /// Creates the per-profile query bodies and shapes.
     /// </summary>
@@ -40,32 +45,143 @@ public sealed partial class GodotKinematicCollisionWorld : Node3D, ICharacterCol
     /// per query would allocate on the hot path and, worse, make query cost
     /// depend on how many frames replay is resimulating.
     /// </remarks>
-    public void Initialize(CollisionProfileTable profiles, uint staticWorldMask) =>
-        throw new NotImplementedException();
+    public void Initialize(CollisionProfileTable profiles, uint staticWorldMask)
+    {
+        ArgumentNullException.ThrowIfNull(profiles);
+        ReleaseProfiles();
+
+        foreach (var kind in new[]
+        {
+            CollisionProfileKind.Standing,
+            CollisionProfileKind.Crouching,
+            CollisionProfileKind.Rolling,
+        })
+        {
+            _profiles[kind] = CreateProfile(profiles.For(kind), staticWorldMask);
+        }
+
+        _parameters = new PhysicsTestMotionParameters3D
+        {
+            // Recovery is the motor's job, through ResolveOverlap, so the query
+            // reports contacts rather than silently depenetrating. The probe ran
+            // the same way.
+            RecoveryAsCollision = false,
+            MaxCollisions = MaximumReportedCollisions,
+        };
+        _initialized = true;
+    }
 
     /// <inheritdoc />
     public CapsuleSweepResult Sweep(
         in CapsuleSweepRequest request,
-        Span<CollisionContactState> contacts) => throw new NotImplementedException();
+        Span<CollisionContactState> contacts)
+    {
+        var body = RequireProfile(request.Profile);
+        var motion = new Vector3(
+            (float)request.HorizontalMotion.X,
+            (float)request.VerticalMotion,
+            (float)request.HorizontalMotion.Z);
+
+        _parameters.From = new Transform3D(Basis.Identity, ToEngine(request.Origin));
+        _parameters.Motion = motion;
+        var collided = PhysicsServer3D.BodyTestMotion(body.Rid, _parameters, _result);
+
+        var travel = _result.GetTravel();
+        var remainder = _result.GetRemainder();
+        var achievedHorizontal = new HorizontalVector(travel.X, travel.Z);
+        var remainingHorizontal = new HorizontalVector(remainder.X, remainder.Z);
+
+        var count = 0;
+        if (collided)
+        {
+            var reported = Math.Min(_result.GetCollisionCount(), contacts.Length);
+            for (var index = 0; index < reported; index++)
+            {
+                var normal = NormalFromEngine(_result.GetCollisionNormal(index));
+                var point = FromEngine(_result.GetCollisionPoint(index));
+                var colliderRid = _result.GetColliderRid(index);
+                contacts[count++] = new CollisionContactState(
+                    point,
+                    normal,
+                    ClampFraction(travel, motion),
+                    Math.Max(0d, _result.GetCollisionDepth(index)),
+                    new SupportIdentity(colliderRid.Id, _result.GetColliderShape(index)),
+                    CollisionContactState.ClassifySurface(normal, _walkableSlopeRadians));
+            }
+        }
+
+        return new CapsuleSweepResult(
+            achievedHorizontal,
+            travel.Y,
+            remainingHorizontal,
+            remainder.Y,
+            count);
+    }
 
     /// <inheritdoc />
-    public GroundProbeResult ProbeGround(in GroundProbeRequest request) =>
-        throw new NotImplementedException();
+    public GroundProbeResult ProbeGround(in GroundProbeRequest request)
+    {
+        var body = RequireProfile(request.Profile);
+        _parameters.From = new Transform3D(Basis.Identity, ToEngine(request.Origin));
+        _parameters.Motion = new Vector3(0f, -(float)request.MaximumDistance, 0f);
+
+        if (!PhysicsServer3D.BodyTestMotion(body.Rid, _parameters, _result))
+        {
+            return GroundProbeResult.None;
+        }
+
+        var travel = _result.GetTravel();
+        return new GroundProbeResult(
+            true,
+            Math.Abs(travel.Y),
+            NormalFromEngine(_result.GetCollisionNormal()),
+            new SupportIdentity(_result.GetColliderRid().Id, _result.GetColliderShape()));
+    }
 
     /// <inheritdoc />
     public bool HasClearance(in ClearanceRequest request) =>
-        throw new NotImplementedException();
+        !ResolveOverlap(request).IsOverlapping;
 
     /// <inheritdoc />
     /// <remarks>
-    /// Uses a rest-info style query rather than a motion test, because
-    /// penetration recovery runs before any motion exists and needs a separation
-    /// direction and depth, not a travel fraction. Note the P01-09 probe
-    /// deliberately ran with recovery-as-collision disabled, so this specific
-    /// path is not one it proved; P05-06 must verify it directly.
+    /// Probes with a negligible motion rather than zero: the motion test reports
+    /// existing overlap through its recovery vector, and a strictly zero motion
+    /// gives the solver nothing to report against. Penetration recovery runs
+    /// before any motion exists and needs a separation direction and depth, not a
+    /// travel fraction, which is why this is a distinct query rather than a
+    /// sweep.
     /// </remarks>
-    public OverlapResolution ResolveOverlap(in ClearanceRequest request) =>
-        throw new NotImplementedException();
+    public OverlapResolution ResolveOverlap(in ClearanceRequest request)
+    {
+        var body = RequireProfile(request.Profile);
+        _parameters.From = new Transform3D(Basis.Identity, ToEngine(request.Origin));
+        _parameters.Motion = new Vector3(0f, -OverlapProbeMotion, 0f);
+        _parameters.RecoveryAsCollision = true;
+        try
+        {
+            if (!PhysicsServer3D.BodyTestMotion(body.Rid, _parameters, _result))
+            {
+                return OverlapResolution.None;
+            }
+
+            var depth = _result.GetCollisionDepth();
+            if (depth <= 0d)
+            {
+                return OverlapResolution.None;
+            }
+
+            var normal = _result.GetCollisionNormal();
+            return new OverlapResolution(
+                true,
+                new HorizontalVector(normal.X * depth, normal.Z * depth),
+                normal.Y * depth,
+                depth);
+        }
+        finally
+        {
+            _parameters.RecoveryAsCollision = false;
+        }
+    }
 
     /// <inheritdoc />
     /// <remarks>
@@ -78,16 +194,92 @@ public sealed partial class GodotKinematicCollisionWorld : Node3D, ICharacterCol
         SimulationInstant fromFrame,
         SimulationInstant toFrame,
         out HorizontalVector horizontal,
-        out double vertical) => throw new NotImplementedException();
+        out double vertical)
+    {
+        horizontal = HorizontalVector.Zero;
+        vertical = 0d;
+        return false;
+    }
 
     /// <summary>
     /// Releases the precreated physics-server bodies and shapes.
     /// </summary>
     /// <remarks>
     /// These are server-side resources that outlive node freeing, so they are
-    /// released explicitly. The P01-09 probe verified the cleanup path.
+    /// released explicitly. <c>_ExitTree</c> is the path the P01-09 probe
+    /// verified, so it is the one used here.
     /// </remarks>
-    protected override void Dispose(bool disposing) => throw new NotImplementedException();
+    public override void _ExitTree() => ReleaseProfiles();
+
+    private const int MaximumReportedCollisions = 8;
+    private const float OverlapProbeMotion = 0.0001f;
+    private double _walkableSlopeRadians = Math.PI / 4d;
+
+    /// <summary>The walkable threshold contacts are classified against.</summary>
+    public void SetWalkableSlope(double radians) => _walkableSlopeRadians = radians;
+
+    private ProfileBody RequireProfile(CollisionProfileKind kind)
+    {
+        if (!_initialized)
+        {
+            throw new InvalidOperationException(
+                "The collision world must be initialized with a profile table before use.");
+        }
+
+        return _profiles.TryGetValue(kind, out var body)
+            ? body
+            : throw new ArgumentOutOfRangeException(nameof(kind));
+    }
+
+    private ProfileBody CreateProfile(CollisionProfileDimensions dimensions, uint staticWorldMask)
+    {
+        var shape = new CapsuleShape3D
+        {
+            Radius = (float)dimensions.Radius,
+            Height = (float)dimensions.Height,
+        };
+        var rid = PhysicsServer3D.BodyCreate();
+        PhysicsServer3D.BodySetMode(rid, PhysicsServer3D.BodyMode.Kinematic);
+
+        // Layer zero: this body is a query probe and must never be collided
+        // against by anything else.
+        PhysicsServer3D.BodySetCollisionLayer(rid, 0);
+        PhysicsServer3D.BodySetCollisionMask(rid, staticWorldMask);
+
+        // The capsule shape is centred on its origin, while simulation treats the
+        // position as the FOOT. Offsetting by half the height is what reconciles
+        // the two, and getting it wrong sinks the character into the floor.
+        PhysicsServer3D.BodyAddShape(
+            rid,
+            shape.GetRid(),
+            new Transform3D(Basis.Identity, new Vector3(0f, (float)dimensions.HalfHeight, 0f)));
+        PhysicsServer3D.BodySetSpace(rid, GetWorld3D().Space);
+        return new ProfileBody(rid, shape);
+    }
+
+    private void ReleaseProfiles()
+    {
+        foreach (var profile in _profiles.Values)
+        {
+            if (profile.Rid.IsValid)
+            {
+                PhysicsServer3D.FreeRid(profile.Rid);
+            }
+
+            profile.Shape.Dispose();
+        }
+
+        _profiles.Clear();
+        _initialized = false;
+    }
+
+    private static double ClampFraction(Vector3 travel, Vector3 motion)
+    {
+        var motionLength = motion.Length();
+        return motionLength <= 1e-6f
+            ? 0d
+            : Math.Clamp(travel.Length() / motionLength, 0d, 1d);
+    }
 
     /// <summary>
     /// Converts a simulation position into the engine's vector type.
@@ -97,14 +289,20 @@ public sealed partial class GodotKinematicCollisionWorld : Node3D, ICharacterCol
     /// its own <see cref="WorldPosition"/>: <c>BattleArena.Core</c> stays free of
     /// any engine reference, and the precision boundary between the double-based
     /// simulation and the engine's float transforms is explicit and auditable
-    /// rather than scattered.
+    /// rather than scattered. Positions are effectively on the float grid after
+    /// any contact; the doubles buy protocol quantization convenience, not
+    /// precision that survives a sweep.
     /// </remarks>
     private static Vector3 ToEngine(WorldPosition position) =>
-        throw new NotImplementedException();
+        new((float)position.X, (float)position.Y, (float)position.Z);
 
     private static WorldPosition FromEngine(Vector3 position) =>
-        throw new NotImplementedException();
+        new(position.X, position.Y, position.Z);
 
     private static SurfaceNormal NormalFromEngine(Vector3 normal) =>
-        throw new NotImplementedException();
+        normal.LengthSquared() <= 1e-9f
+            ? SurfaceNormal.Up
+            : new SurfaceNormal(normal.X, normal.Y, normal.Z);
+
+    private readonly record struct ProfileBody(Rid Rid, CapsuleShape3D Shape);
 }

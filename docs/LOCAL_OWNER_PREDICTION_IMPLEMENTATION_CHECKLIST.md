@@ -1306,7 +1306,7 @@ be met by a static-only world and belongs with Phase 9 frame-aligned collision.
   - Verification: Contract validation and deterministic fake-world tests pass.
 
 - [ ] **P05-06 — Implement the static Godot query adapter.**
-  - Status: **Stubs Reviewed**.
+  - Status: **Implemented**.
   - Purpose: Execute explicit-transform capsule queries with precreated profile
     RIDs, static-only masks, exclusions, and reusable buffers.
   - Target files: `GodotKinematicCollisionWorld.cs`,
@@ -1394,7 +1394,7 @@ be met by a static-only world and belongs with Phase 9 frame-aligned collision.
     traces pass.
 
 - [ ] **P05-16 — Add the dual-motor offline test adapter.**
-  - Status: **Stubs Reviewed**.
+  - Status: **Implemented**.
   - Purpose: Let the existing movement arena switch between Legacy and
     ExplicitQueryMotor without changing accepted content values.
   - Target files: `MovementTestPlayer.cs`, `movement_test_arena.tscn`,
@@ -1403,7 +1403,7 @@ be met by a static-only world and belongs with Phase 9 frame-aligned collision.
     in diagnostics.
 
 - [ ] **P05-17 — Lock the explicit-motor golden suite.**
-  - Status: **Stubs Reviewed**.
+  - Status: **Implemented**.
   - Purpose: Cover the complete arena course and 10,000-frame restore/replay
     reproducibility before networking cutover.
   - Target files: `ExplicitMotorGoldenTraceTests.cs`,
