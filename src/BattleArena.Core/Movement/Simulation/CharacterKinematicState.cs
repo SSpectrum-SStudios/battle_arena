@@ -19,21 +19,28 @@ namespace BattleArena.Core.Movement.Simulation;
 /// </remarks>
 public readonly record struct WorldPosition
 {
-    public WorldPosition(double x, double y, double z) => throw new NotImplementedException();
+    public WorldPosition(double x, double y, double z)
+    {
+        X = x;
+        Y = y;
+        Z = z;
+    }
 
     public double X { get; }
     public double Y { get; }
     public double Z { get; }
-    public bool IsFinite => throw new NotImplementedException();
+    public bool IsFinite => double.IsFinite(X) && double.IsFinite(Y) && double.IsFinite(Z);
 
     public static WorldPosition Zero => default;
 
     /// <summary>Horizontal displacement only, for locomotion rules that ignore height.</summary>
     public HorizontalVector HorizontalTo(WorldPosition other) =>
-        throw new NotImplementedException();
+        new(other.X - X, other.Z - Z);
 
     public WorldPosition Offset(HorizontalVector horizontal, double vertical) =>
-        throw new NotImplementedException();
+        new(X + horizontal.X, Y + vertical, Z + horizontal.Z);
+
+    public override string ToString() => $"({X:0.###}, {Y:0.###}, {Z:0.###})";
 }
 
 /// <summary>
@@ -42,23 +49,52 @@ public readonly record struct WorldPosition
 /// </summary>
 public readonly record struct SurfaceNormal
 {
-    public SurfaceNormal(double x, double y, double z) => throw new NotImplementedException();
+    private const double UnitTolerance = 1e-6d;
+
+    public SurfaceNormal(double x, double y, double z)
+    {
+        if (!double.IsFinite(x) || !double.IsFinite(y) || !double.IsFinite(z))
+        {
+            throw new ArgumentOutOfRangeException(nameof(x), "A surface normal must be finite.");
+        }
+
+        var lengthSquared = (x * x) + (y * y) + (z * z);
+        if (lengthSquared <= MovementMath.EpsilonSquared)
+        {
+            throw new ArgumentOutOfRangeException(nameof(x), "A surface normal must be non-degenerate.");
+        }
+
+        // Normalized on construction so every consumer can assume unit length
+        // rather than each re-normalizing and drifting apart by rounding.
+        var length = Math.Sqrt(lengthSquared);
+        X = x / length;
+        Y = y / length;
+        Z = z / length;
+    }
 
     public double X { get; }
     public double Y { get; }
     public double Z { get; }
 
     /// <summary>Straight up. The default for a flat floor and the identity for slope tests.</summary>
-    public static SurfaceNormal Up => throw new NotImplementedException();
+    public static SurfaceNormal Up => new(0d, 1d, 0d);
 
-    public bool IsValid => throw new NotImplementedException();
+    public bool IsValid =>
+        double.IsFinite(X) && double.IsFinite(Y) && double.IsFinite(Z) &&
+        Math.Abs(((X * X) + (Y * Y) + (Z * Z)) - 1d) <= UnitTolerance;
 
     /// <summary>
-    /// Angle from vertical, which is what walkability is expressed in. Returned
-    /// in radians so the caller compares against an authored threshold rather
-    /// than recomputing a dot product at each site.
+    /// Angle from vertical, which is what walkability is expressed in.
     /// </summary>
-    public double SlopeAngleRadians => throw new NotImplementedException();
+    /// <remarks>
+    /// Provided for diagnostics and authoring. Classification itself compares
+    /// <see cref="Y"/> against the cosine of the threshold instead, which avoids
+    /// a transcendental exactly at the boundary where the answer flips.
+    /// </remarks>
+    public double SlopeAngleRadians => Math.Acos(Math.Clamp(Y, -1d, 1d));
+
+    /// <summary>The horizontal part of this normal, used to project blocked motion.</summary>
+    public HorizontalVector Horizontal => new(X, Z);
 }
 
 /// <summary>
@@ -72,12 +108,20 @@ public readonly record struct SurfaceNormal
 /// </remarks>
 public readonly record struct SupportIdentity
 {
-    public SupportIdentity(ulong colliderId, int shapeIndex) =>
-        throw new NotImplementedException();
+    public SupportIdentity(ulong colliderId, int shapeIndex)
+    {
+        if (shapeIndex < 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(shapeIndex));
+        }
+
+        ColliderId = colliderId;
+        ShapeIndex = shapeIndex;
+    }
 
     public ulong ColliderId { get; }
     public int ShapeIndex { get; }
-    public bool IsValid => throw new NotImplementedException();
+    public bool IsValid => ColliderId != 0;
     public static SupportIdentity None => default;
 }
 
@@ -108,7 +152,29 @@ public readonly record struct CharacterKinematicState
         double facingYawRadians,
         bool isGrounded,
         SurfaceNormal groundNormal,
-        SupportIdentity support) => throw new NotImplementedException();
+        SupportIdentity support)
+    {
+        if (!position.IsFinite ||
+            !horizontalVelocity.IsFinite ||
+            !double.IsFinite(verticalVelocity) ||
+            !double.IsFinite(facingYawRadians))
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(position),
+                "Kinematic state values must be finite.");
+        }
+
+        Position = position;
+        HorizontalVelocity = horizontalVelocity;
+        VerticalVelocity = verticalVelocity;
+        FacingYawRadians = MovementMath.WrapAngle(facingYawRadians);
+        IsGrounded = isGrounded;
+
+        // An airborne state never retains a ground normal or support. Keeping a
+        // stale slope would change how the next landing is classified.
+        GroundNormal = isGrounded && groundNormal.IsValid ? groundNormal : SurfaceNormal.Up;
+        Support = isGrounded ? support : SupportIdentity.None;
+    }
 
     public WorldPosition Position { get; }
     public HorizontalVector HorizontalVelocity { get; }
@@ -126,17 +192,52 @@ public readonly record struct CharacterKinematicState
     public SurfaceNormal GroundNormal { get; }
     public SupportIdentity Support { get; }
 
-    public bool IsValid => throw new NotImplementedException();
+    public bool IsValid =>
+        Position.IsFinite &&
+        HorizontalVelocity.IsFinite &&
+        double.IsFinite(VerticalVelocity) &&
+        double.IsFinite(FacingYawRadians) &&
+        GroundNormal.IsValid &&
+        (IsGrounded || (!Support.IsValid && GroundNormal == SurfaceNormal.Up));
 
-    public static CharacterKinematicState AtRest(WorldPosition position, double facingYawRadians) =>
-        throw new NotImplementedException();
+    public static CharacterKinematicState AtRest(
+        WorldPosition position,
+        double facingYawRadians) => new(
+            position,
+            HorizontalVector.Zero,
+            0d,
+            facingYawRadians,
+            isGrounded: true,
+            SurfaceNormal.Up,
+            SupportIdentity.None);
 
-    public CharacterKinematicState WithPosition(WorldPosition position) =>
-        throw new NotImplementedException();
+    public CharacterKinematicState WithPosition(WorldPosition position) => new(
+        position,
+        HorizontalVelocity,
+        VerticalVelocity,
+        FacingYawRadians,
+        IsGrounded,
+        GroundNormal,
+        Support);
 
-    public CharacterKinematicState WithVelocity(
-        HorizontalVector horizontal,
-        double vertical) => throw new NotImplementedException();
+    public CharacterKinematicState WithVelocity(HorizontalVector horizontal, double vertical) =>
+        new(
+            Position,
+            horizontal,
+            vertical,
+            FacingYawRadians,
+            IsGrounded,
+            GroundNormal,
+            Support);
+
+    public CharacterKinematicState WithFacing(double facingYawRadians) => new(
+        Position,
+        HorizontalVelocity,
+        VerticalVelocity,
+        facingYawRadians,
+        IsGrounded,
+        GroundNormal,
+        Support);
 
     /// <summary>
     /// Records the outcome of a ground probe. Clearing support also clears the
@@ -146,5 +247,12 @@ public readonly record struct CharacterKinematicState
     public CharacterKinematicState WithGround(
         bool isGrounded,
         SurfaceNormal groundNormal,
-        SupportIdentity support) => throw new NotImplementedException();
+        SupportIdentity support) => new(
+            Position,
+            HorizontalVelocity,
+            VerticalVelocity,
+            FacingYawRadians,
+            isGrounded,
+            groundNormal,
+            support);
 }

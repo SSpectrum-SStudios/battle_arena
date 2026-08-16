@@ -1263,7 +1263,7 @@ be met by a static-only world and belongs with Phase 9 frame-aligned collision.
 
 
 - [ ] **P05-01 — Define compact kinematic and contact state.**
-  - Status: **Stubs Reviewed**.
+  - Status: **Implemented**.
   - Purpose: Own position, velocity, facing, grounded, normal, support behavior,
     and stable contact facts in replayable value state.
   - Target files: `CharacterKinematicState.cs`,
@@ -1272,7 +1272,7 @@ be met by a static-only world and belongs with Phase 9 frame-aligned collision.
     semantics pass without per-frame allocation.
 
 - [ ] **P05-02 — Define collision profile state and bounds.**
-  - Status: **Stubs Reviewed**.
+  - Status: **Implemented**.
   - Purpose: Represent standing/crouching/rolling profiles by stable identity and
     validated dimensions.
   - Target files: `CollisionProfileState.cs`,
@@ -1280,7 +1280,7 @@ be met by a static-only world and belongs with Phase 9 frame-aligned collision.
   - Verification: Profile validation and legal shrink/expansion intent tests pass.
 
 - [ ] **P05-03 — Define bounded movement-source state.**
-  - Status: **Stubs Reviewed**.
+  - Status: **Implemented**.
   - Purpose: Store replayable lunge, roll, dash, knockback, pull, and future item
     motion in a fixed-capacity value buffer.
   - Target files: `MovementSourceState.cs`, `MovementSourceBuffer.cs`,
@@ -1289,7 +1289,7 @@ be met by a static-only world and belongs with Phase 9 frame-aligned collision.
     no-allocation tests pass.
 
 - [ ] **P05-04 — Define the aggregate character simulation state.**
-  - Status: **Stubs Reviewed**.
+  - Status: **Implemented**.
   - Purpose: Combine movement, action, contact, profile, sources, revisions, and
     deterministic counters into the complete rewind unit.
   - Target files: `CharacterSimulationState.cs`,

@@ -23,8 +23,22 @@ public enum CollisionProfileKind : byte
 /// </remarks>
 public readonly record struct CollisionProfileDimensions
 {
-    public CollisionProfileDimensions(double radius, double height) =>
-        throw new NotImplementedException();
+    public CollisionProfileDimensions(double radius, double height)
+    {
+        if (!double.IsFinite(radius) || radius <= 0d)
+        {
+            throw new ArgumentOutOfRangeException(nameof(radius));
+        }
+        if (!double.IsFinite(height) || height <= 0d || height < radius * 2d)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(height),
+                "A capsule height must accommodate both hemispheres.");
+        }
+
+        Radius = radius;
+        Height = height;
+    }
 
     public double Radius { get; }
     public double Height { get; }
@@ -33,8 +47,11 @@ public readonly record struct CollisionProfileDimensions
     /// Half the full height. Note the capsule origin is the FOOT, so the distance
     /// from the origin to the top is <see cref="Height"/>, not this.
     /// </summary>
-    public double HalfHeight => throw new NotImplementedException();
-    public bool IsValid => throw new NotImplementedException();
+    public double HalfHeight => Height * 0.5d;
+
+    public bool IsValid =>
+        double.IsFinite(Radius) && Radius > 0d &&
+        double.IsFinite(Height) && Height > 0d && Height >= Radius * 2d;
 }
 
 /// <summary>
@@ -56,9 +73,20 @@ public readonly record struct CollisionProfileDimensions
 /// </remarks>
 public readonly record struct CollisionProfileState
 {
-    public CollisionProfileState(
-        CollisionProfileKind current,
-        CollisionProfileKind desired) => throw new NotImplementedException();
+    public CollisionProfileState(CollisionProfileKind current, CollisionProfileKind desired)
+    {
+        if (!Enum.IsDefined(current))
+        {
+            throw new ArgumentOutOfRangeException(nameof(current));
+        }
+        if (!Enum.IsDefined(desired))
+        {
+            throw new ArgumentOutOfRangeException(nameof(desired));
+        }
+
+        Current = current;
+        Desired = desired;
+    }
 
     public CollisionProfileKind Current { get; }
 
@@ -70,43 +98,51 @@ public readonly record struct CollisionProfileState
 
     /// <summary>
     /// True when the character is held in a smaller profile than it wants. Takes
-    /// the table for the same reason as <see cref="WithDesired"/>: enum order is
-    /// not size order.
+    /// the table because enum order is not size order — Standing is the smallest
+    /// enum value and the largest capsule.
     /// </summary>
-    public bool HasPendingExpansion(CollisionProfileTable profiles) =>
-        throw new NotImplementedException();
-    public bool IsValid => throw new NotImplementedException();
+    public bool HasPendingExpansion(CollisionProfileTable profiles)
+    {
+        ArgumentNullException.ThrowIfNull(profiles);
+        return Current != Desired && profiles.IsExpansion(Current, Desired);
+    }
 
-    public static CollisionProfileState Standing => throw new NotImplementedException();
+    public bool IsValid => Enum.IsDefined(Current) && Enum.IsDefined(Desired);
+
+    public static CollisionProfileState Standing =>
+        new(CollisionProfileKind.Standing, CollisionProfileKind.Standing);
 
     /// <summary>
     /// Requests a profile. Shrinking applies immediately; expanding records the
     /// intent and leaves <see cref="Current"/> alone for the clearance stage to
     /// resolve.
     /// </summary>
-    /// <remarks>
-    /// Needs the table because whether a change shrinks or grows the capsule is a
-    /// question about dimensions, and the profile kinds are not ordered by size —
-    /// Standing is the smallest enum value and the largest capsule.
-    /// </remarks>
     public CollisionProfileState WithDesired(
         CollisionProfileKind desired,
-        CollisionProfileTable profiles) => throw new NotImplementedException();
+        CollisionProfileTable profiles)
+    {
+        ArgumentNullException.ThrowIfNull(profiles);
+        if (!Enum.IsDefined(desired))
+        {
+            throw new ArgumentOutOfRangeException(nameof(desired));
+        }
+
+        // Shrinking never needs clearance: a smaller capsule always fits where a
+        // larger one already did.
+        return profiles.IsExpansion(Current, desired)
+            ? new CollisionProfileState(Current, desired)
+            : new CollisionProfileState(desired, desired);
+    }
 
     /// <summary>
     /// Applies a pending expansion the clearance stage has approved.
     /// </summary>
-    public CollisionProfileState ExpandToDesired() => throw new NotImplementedException();
+    public CollisionProfileState ExpandToDesired() => new(Desired, Desired);
 }
 
 /// <summary>
 /// The authored dimension table, resolved by profile identity.
 /// </summary>
-/// <remarks>
-/// Immutable and validated on construction so the motor can look up dimensions
-/// on the hot path without re-checking, and so a content error is a startup
-/// failure rather than a mid-match one.
-/// </remarks>
 /// <remarks>
 /// Owned by the movement configuration revision rather than constructed once at
 /// startup. Capsule dimensions are already authored on
@@ -120,25 +156,65 @@ public sealed class CollisionProfileTable
     /// Builds the table from the authored attributes for one revision, so the
     /// dimensions and the rules that use them can never disagree.
     /// </summary>
-    public static CollisionProfileTable FromAttributes(MovementAttributeSnapshot attributes) =>
-        throw new NotImplementedException();
+    public static CollisionProfileTable FromAttributes(MovementAttributeSnapshot attributes)
+    {
+        ArgumentNullException.ThrowIfNull(attributes);
+        var crouchRoll = attributes.CrouchRoll;
+        var radius = crouchRoll.CapsuleRadius;
+        return new CollisionProfileTable(
+            new CollisionProfileDimensions(radius, crouchRoll.StandingCapsuleHeight),
+            new CollisionProfileDimensions(radius, crouchRoll.CrouchingCapsuleHeight),
+            new CollisionProfileDimensions(radius, crouchRoll.RollingCapsuleHeight));
+    }
 
     public CollisionProfileTable(
         CollisionProfileDimensions standing,
         CollisionProfileDimensions crouching,
-        CollisionProfileDimensions rolling) => throw new NotImplementedException();
+        CollisionProfileDimensions rolling)
+    {
+        if (!standing.IsValid)
+        {
+            throw new ArgumentOutOfRangeException(nameof(standing));
+        }
+        if (!crouching.IsValid)
+        {
+            throw new ArgumentOutOfRangeException(nameof(crouching));
+        }
+        if (!rolling.IsValid)
+        {
+            throw new ArgumentOutOfRangeException(nameof(rolling));
+        }
 
-    public CollisionProfileDimensions Standing => throw new NotImplementedException();
-    public CollisionProfileDimensions Crouching => throw new NotImplementedException();
-    public CollisionProfileDimensions Rolling => throw new NotImplementedException();
+        Standing = standing;
+        Crouching = crouching;
+        Rolling = rolling;
+    }
 
-    public CollisionProfileDimensions For(CollisionProfileKind kind) =>
-        throw new NotImplementedException();
+    public CollisionProfileDimensions Standing { get; }
+    public CollisionProfileDimensions Crouching { get; }
+    public CollisionProfileDimensions Rolling { get; }
+
+    public CollisionProfileDimensions For(CollisionProfileKind kind) => kind switch
+    {
+        CollisionProfileKind.Standing => Standing,
+        CollisionProfileKind.Crouching => Crouching,
+        CollisionProfileKind.Rolling => Rolling,
+        _ => throw new ArgumentOutOfRangeException(nameof(kind)),
+    };
 
     /// <summary>
     /// Whether moving between two profiles grows the capsule, and therefore
     /// needs a clearance check before it may be applied.
     /// </summary>
-    public bool IsExpansion(CollisionProfileKind from, CollisionProfileKind to) =>
-        throw new NotImplementedException();
+    /// <remarks>
+    /// Decided from authored dimensions rather than from enum order, which is
+    /// inverse to size: <see cref="CollisionProfileKind.Standing"/> is the
+    /// smallest enum value and the tallest capsule.
+    /// </remarks>
+    public bool IsExpansion(CollisionProfileKind from, CollisionProfileKind to)
+    {
+        var source = For(from);
+        var target = For(to);
+        return target.Height > source.Height || target.Radius > source.Radius;
+    }
 }

@@ -23,6 +23,12 @@ namespace BattleArena.Core.Movement.Simulation;
 /// presentation and movement influence, never an outcome.
 /// </para>
 /// <para>
+/// Authority discontinuity and owner-control epoch are deliberately absent.
+/// They live in <c>BattleArena.Multiplayer</c>, and Phase 4's
+/// <c>CombatantPredictionEpochGate</c> already owns that scoping; duplicating
+/// them here would create a second place for them to disagree.
+/// </para>
+/// <para>
 /// A value struct, copied per retained frame. The Phase 1 replay probe measured
 /// history memory and per-frame cost against exactly this shape.
 /// </para>
@@ -51,7 +57,62 @@ public readonly record struct CharacterSimulationState
         SimulationInstant rollAvailableAt,
         bool landingRollQueued,
         MovementConfigurationRevision movementRevision,
-        MovementCapabilityRevision capabilityRevision) => throw new NotImplementedException();
+        MovementCapabilityRevision capabilityRevision)
+    {
+        if (!kinematic.IsValid)
+        {
+            throw new ArgumentOutOfRangeException(nameof(kinematic));
+        }
+        if (!profile.IsValid)
+        {
+            throw new ArgumentOutOfRangeException(nameof(profile));
+        }
+        if (!action.IsValid)
+        {
+            throw new ArgumentOutOfRangeException(nameof(action));
+        }
+        if (!counters.IsValid)
+        {
+            throw new ArgumentOutOfRangeException(nameof(counters));
+        }
+        if (!rollDirection.IsFinite ||
+            !double.IsFinite(rollEntrySpeed) || rollEntrySpeed < 0d ||
+            !double.IsFinite(rollBoostDistance) || rollBoostDistance < 0d)
+        {
+            throw new ArgumentOutOfRangeException(nameof(rollDirection));
+        }
+        if (!movementRevision.IsValid)
+        {
+            throw new ArgumentOutOfRangeException(nameof(movementRevision));
+        }
+        if (!capabilityRevision.IsValid)
+        {
+            throw new ArgumentOutOfRangeException(nameof(capabilityRevision));
+        }
+
+        Frame = frame;
+        Kinematic = kinematic;
+        Profile = profile;
+        MovementSources = movementSources;
+        Action = action;
+        Counters = counters;
+        LocomotionMode = locomotionMode;
+        PostureMode = postureMode;
+        ActionMode = actionMode;
+        ModeStartedAt = modeStartedAt;
+        JumpPhase = jumpPhase;
+        LastGroundedAt = lastGroundedAt;
+        BufferedJumpUntil = bufferedJumpUntil;
+        JumpCutApplied = jumpCutApplied;
+        RollDirection = rollDirection;
+        RollEntrySpeed = rollEntrySpeed;
+        RollBoostDistance = rollBoostDistance;
+        RollDuration = rollDuration;
+        RollAvailableAt = rollAvailableAt;
+        LandingRollQueued = landingRollQueued;
+        MovementRevision = movementRevision;
+        CapabilityRevision = capabilityRevision;
+    }
 
     /// <summary>
     /// The frame this state is the result of.
@@ -63,64 +124,95 @@ public readonly record struct CharacterSimulationState
     /// <see cref="ModeStartedAt"/> never exceeding the current frame, cannot be
     /// checked at all.
     /// </remarks>
-    public SimulationInstant Frame { get; }
+    public SimulationInstant Frame { get; init; }
 
     /// <summary>Position, velocity, facing, and support. The part the legacy state lacked.</summary>
-    public CharacterKinematicState Kinematic { get; }
+    public CharacterKinematicState Kinematic { get; init; }
 
-    public CollisionProfileState Profile { get; }
+    public CollisionProfileState Profile { get; init; }
 
     /// <summary>Active external motion, replayable rather than applied once as an impulse.</summary>
-    public MovementSourceBuffer MovementSources { get; }
+    public MovementSourceBuffer MovementSources { get; init; }
 
     /// <summary>
     /// Predicted action correlation and phase — never an outcome.
     /// </summary>
-    /// <remarks>
-    /// Needed because accepted attack feel includes movement influence: the
-    /// active attack step gates sprint acceleration, momentum preservation,
-    /// acceleration and steering multipliers, and extra deceleration. Replay
-    /// cannot reproduce those without knowing which step was active on the frame,
-    /// and <see cref="ActionMode"/> alone is a three-state enum that cannot say.
-    /// </remarks>
-    public CharacterActionState Action { get; }
+    public CharacterActionState Action { get; init; }
 
-    /// <summary>
-    /// Counters that must survive restore because a rule reads them.
-    /// </summary>
-    public DeterministicCounterState Counters { get; }
+    /// <summary>Counters that must survive restore because a rule reads them.</summary>
+    public DeterministicCounterState Counters { get; init; }
 
-    public LocomotionMode LocomotionMode { get; }
-    public PostureMode PostureMode { get; }
-    public MovementActionMode ActionMode { get; }
-    public SimulationInstant ModeStartedAt { get; }
-    public JumpPhase JumpPhase { get; }
-    public SimulationInstant LastGroundedAt { get; }
-    public SimulationInstant? BufferedJumpUntil { get; }
-    public bool JumpCutApplied { get; }
-    public HorizontalVector RollDirection { get; }
-    public double RollEntrySpeed { get; }
-    public double RollBoostDistance { get; }
-    public SimulationDuration RollDuration { get; }
-    public SimulationInstant RollAvailableAt { get; }
-    public bool LandingRollQueued { get; }
+    public LocomotionMode LocomotionMode { get; init; }
+    public PostureMode PostureMode { get; init; }
+    public MovementActionMode ActionMode { get; init; }
+    public SimulationInstant ModeStartedAt { get; init; }
+    public JumpPhase JumpPhase { get; init; }
+    public SimulationInstant LastGroundedAt { get; init; }
+    public SimulationInstant? BufferedJumpUntil { get; init; }
+    public bool JumpCutApplied { get; init; }
+    public HorizontalVector RollDirection { get; init; }
+    public double RollEntrySpeed { get; init; }
+    public double RollBoostDistance { get; init; }
+    public SimulationDuration RollDuration { get; init; }
+    public SimulationInstant RollAvailableAt { get; init; }
+    public bool LandingRollQueued { get; init; }
 
     /// <summary>
     /// Configuration the frame was simulated under. Carried so a replayed frame
     /// uses the revision that was in force then, not whatever is current — a
     /// mid-replay configuration change would otherwise silently alter history.
     /// </summary>
-    public MovementConfigurationRevision MovementRevision { get; }
-    public MovementCapabilityRevision CapabilityRevision { get; }
+    public MovementConfigurationRevision MovementRevision { get; init; }
+    public MovementCapabilityRevision CapabilityRevision { get; init; }
 
-    public bool IsValid => throw new NotImplementedException();
+    /// <summary>
+    /// Every invariant this type promises.
+    /// </summary>
+    /// <remarks>
+    /// The properties carry <c>init</c> setters so the narrow <c>With*</c>
+    /// helpers can use <c>with</c> expressions, which means a caller could in
+    /// principle bypass the validating constructor. This check is therefore the
+    /// standing guard rather than a redundant one, and inserting a state into
+    /// prediction history must assert it.
+    /// </remarks>
+    public bool IsValid =>
+        Kinematic.IsValid &&
+        Profile.IsValid &&
+        Action.IsValid &&
+        Counters.IsValid &&
+        MovementRevision.IsValid &&
+        CapabilityRevision.IsValid &&
+        ModeStartedAt.Tick <= Frame.Tick &&
+        LastGroundedAt.Tick <= Frame.Tick;
 
     public static CharacterSimulationState CreateGrounded(
         WorldPosition position,
         double facingYawRadians,
         SimulationInstant now,
         MovementConfigurationRevision movementRevision,
-        MovementCapabilityRevision capabilityRevision) => throw new NotImplementedException();
+        MovementCapabilityRevision capabilityRevision) => new(
+            now,
+            CharacterKinematicState.AtRest(position, facingYawRadians),
+            CollisionProfileState.Standing,
+            default,
+            CharacterActionState.Idle,
+            DeterministicCounterState.Empty,
+            LocomotionMode.Grounded,
+            PostureMode.Standing,
+            MovementActionMode.Ready,
+            now,
+            JumpPhase.None,
+            now,
+            null,
+            false,
+            HorizontalVector.Zero,
+            0d,
+            0d,
+            SimulationDuration.Zero,
+            SimulationInstant.Zero,
+            false,
+            movementRevision,
+            capabilityRevision);
 
     /// <summary>
     /// Projects this state into a <see cref="MovementRuntimeState"/> so the
@@ -133,7 +225,24 @@ public readonly record struct CharacterSimulationState
     /// <see cref="Kinematic"/> — there is no second copy — so this projection is
     /// the only way the rules see them.
     /// </remarks>
-    public MovementRuntimeState ToRuntimeState() => throw new NotImplementedException();
+    public MovementRuntimeState ToRuntimeState() => new(
+        Kinematic.HorizontalVelocity,
+        Kinematic.VerticalVelocity,
+        Kinematic.FacingYawRadians,
+        LocomotionMode,
+        PostureMode,
+        ActionMode,
+        ModeStartedAt,
+        JumpPhase,
+        LastGroundedAt,
+        BufferedJumpUntil,
+        JumpCutApplied,
+        RollDirection,
+        RollEntrySpeed,
+        RollBoostDistance,
+        RollDuration,
+        RollAvailableAt,
+        LandingRollQueued);
 
     /// <summary>
     /// Folds a rule simulator's result back in.
@@ -151,24 +260,55 @@ public readonly record struct CharacterSimulationState
     /// have said how fast the character wants to go.
     /// </para>
     /// </remarks>
-    public CharacterSimulationState WithRuntimeState(MovementRuntimeState runtime) =>
-        throw new NotImplementedException();
+    public CharacterSimulationState WithRuntimeState(MovementRuntimeState runtime) => new(
+        Frame,
+        Kinematic
+            .WithVelocity(runtime.HorizontalVelocity, runtime.VerticalVelocity)
+            .WithFacing(runtime.FacingYawRadians),
+        Profile,
+        MovementSources,
+        Action,
+        Counters,
+        runtime.LocomotionMode,
+        runtime.PostureMode,
+        runtime.ActionMode,
+        runtime.ModeStartedAt,
+        runtime.JumpPhase,
+        runtime.LastGroundedAt,
+        runtime.BufferedJumpUntil,
+        runtime.JumpCutApplied,
+        runtime.RollDirection,
+        runtime.RollEntrySpeed,
+        runtime.RollBoostDistance,
+        runtime.RollDuration,
+        runtime.RollAvailableAt,
+        runtime.LandingRollQueued,
+        MovementRevision,
+        CapabilityRevision);
 
     public CharacterSimulationState WithFrame(SimulationInstant frame) =>
-        throw new NotImplementedException();
-
-    public CharacterSimulationState WithAction(CharacterActionState action) =>
-        throw new NotImplementedException();
-
-    public CharacterSimulationState WithCounters(DeterministicCounterState counters) =>
-        throw new NotImplementedException();
+        this with { Frame = frame };
 
     public CharacterSimulationState WithKinematic(CharacterKinematicState kinematic) =>
-        throw new NotImplementedException();
+        this with { Kinematic = kinematic };
 
     public CharacterSimulationState WithProfile(CollisionProfileState profile) =>
-        throw new NotImplementedException();
+        this with { Profile = profile };
 
     public CharacterSimulationState WithMovementSources(MovementSourceBuffer sources) =>
-        throw new NotImplementedException();
+        this with { MovementSources = sources };
+
+    public CharacterSimulationState WithAction(CharacterActionState action) =>
+        this with { Action = action };
+
+    public CharacterSimulationState WithCounters(DeterministicCounterState counters) =>
+        this with { Counters = counters };
+
+    public CharacterSimulationState WithRevisions(
+        MovementConfigurationRevision movementRevision,
+        MovementCapabilityRevision capabilityRevision) => this with
+        {
+            MovementRevision = movementRevision,
+            CapabilityRevision = capabilityRevision,
+        };
 }

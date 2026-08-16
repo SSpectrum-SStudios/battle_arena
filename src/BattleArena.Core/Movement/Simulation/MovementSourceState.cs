@@ -1,3 +1,4 @@
+using System.Runtime.CompilerServices;
 using BattleArena.Core.Common;
 
 namespace BattleArena.Core.Movement.Simulation;
@@ -21,6 +22,26 @@ public enum MovementSourceKind : byte
 
     /// <summary>Sustained pull toward a point, for future item behaviour.</summary>
     Pull = 5,
+}
+
+/// <summary>
+/// How a source's contribution changes across its lifetime.
+/// </summary>
+/// <remarks>
+/// Stored on the source rather than inferred from its kind, so the curve a frame
+/// was simulated with is the curve replay reproduces. Inferring from kind would
+/// mean an authoring tweak silently rewrote history.
+/// </remarks>
+public enum MovementSourceFalloff : byte
+{
+    /// <summary>Full contribution for the whole lifetime, then nothing.</summary>
+    Constant = 1,
+
+    /// <summary>Full at the start, falling linearly to nothing at the end.</summary>
+    Linear = 2,
+
+    /// <summary>Front-loaded: falls as the square of remaining progress.</summary>
+    Quadratic = 3,
 }
 
 /// <summary>
@@ -51,7 +72,43 @@ public readonly record struct MovementSourceState
         SimulationDuration duration,
         HorizontalVector horizontalDirection,
         double horizontalSpeed,
-        double verticalSpeed) => throw new NotImplementedException();
+        double verticalSpeed,
+        MovementSourceFalloff falloff)
+    {
+        if (!Enum.IsDefined(kind))
+        {
+            throw new ArgumentOutOfRangeException(nameof(kind));
+        }
+        if (sourceId == 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(sourceId), "A movement source must have an identity.");
+        }
+        if (duration.Ticks <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(duration));
+        }
+        if (!horizontalDirection.IsFinite ||
+            !double.IsFinite(horizontalSpeed) ||
+            !double.IsFinite(verticalSpeed))
+        {
+            throw new ArgumentOutOfRangeException(nameof(horizontalDirection));
+        }
+        if (!Enum.IsDefined(falloff))
+        {
+            throw new ArgumentOutOfRangeException(nameof(falloff));
+        }
+
+        Kind = kind;
+        SourceId = sourceId;
+        StartFrame = startFrame;
+        Duration = duration;
+        HorizontalDirection = horizontalDirection.LengthSquared > MovementMath.EpsilonSquared
+            ? horizontalDirection.Normalized
+            : HorizontalVector.Zero;
+        HorizontalSpeed = horizontalSpeed;
+        VerticalSpeed = verticalSpeed;
+        Falloff = falloff;
+    }
 
     public MovementSourceKind Kind { get; }
 
@@ -66,7 +123,20 @@ public readonly record struct MovementSourceState
     public HorizontalVector HorizontalDirection { get; }
     public double HorizontalSpeed { get; }
     public double VerticalSpeed { get; }
-    public bool IsValid => throw new NotImplementedException();
+    public MovementSourceFalloff Falloff { get; }
+
+    public bool IsValid =>
+        Enum.IsDefined(Kind) &&
+        SourceId != 0 &&
+        Duration.Ticks > 0 &&
+        HorizontalDirection.IsFinite &&
+        double.IsFinite(HorizontalSpeed) &&
+        double.IsFinite(VerticalSpeed) &&
+        Enum.IsDefined(Falloff);
+
+    /// <summary>The first frame after this source stops contributing.</summary>
+    public SimulationInstant EndFrameExclusive =>
+        new(StartFrame.Tick + Duration.Ticks);
 
     /// <summary>
     /// Whether this source still contributes on the given frame.
@@ -77,20 +147,57 @@ public readonly record struct MovementSourceState
     /// Returns false for a frame before the start, which is representable because
     /// a source may be started with a start frame in the future.
     /// </remarks>
-    public bool IsActiveOn(SimulationInstant frame) => throw new NotImplementedException();
+    public bool IsActiveOn(SimulationInstant frame) =>
+        IsValid && frame.Tick >= StartFrame.Tick && frame.Tick < EndFrameExclusive.Tick;
 
     /// <summary>
     /// Normalized progress in [0, 1] on the given frame, derived from the start
     /// frame rather than accumulated so replay reproduces it exactly.
     /// </summary>
-    public double ProgressOn(SimulationInstant frame) => throw new NotImplementedException();
+    /// <remarks>
+    /// Computed by subtracting ticks directly rather than through
+    /// <c>SimulationInstant</c> subtraction, which throws when the left operand
+    /// is earlier — and a source may legitimately be asked about a frame before
+    /// it starts.
+    /// </remarks>
+    public double ProgressOn(SimulationInstant frame)
+    {
+        if (!IsValid)
+        {
+            return 0d;
+        }
+
+        var elapsed = frame.Tick - StartFrame.Tick;
+        if (elapsed <= 0)
+        {
+            return 0d;
+        }
+
+        return elapsed >= Duration.Ticks ? 1d : (double)elapsed / Duration.Ticks;
+    }
 
     /// <summary>
     /// This source's velocity contribution on the given frame, after its authored
     /// falloff curve.
     /// </summary>
-    public (HorizontalVector Horizontal, double Vertical) EvaluateOn(SimulationInstant frame) =>
-        throw new NotImplementedException();
+    public (HorizontalVector Horizontal, double Vertical) EvaluateOn(SimulationInstant frame)
+    {
+        if (!IsActiveOn(frame))
+        {
+            return (HorizontalVector.Zero, 0d);
+        }
+
+        var remaining = 1d - ProgressOn(frame);
+        var scale = Falloff switch
+        {
+            MovementSourceFalloff.Constant => 1d,
+            MovementSourceFalloff.Linear => remaining,
+            MovementSourceFalloff.Quadratic => remaining * remaining,
+            _ => 0d,
+        };
+
+        return (HorizontalDirection * (HorizontalSpeed * scale), VerticalSpeed * scale);
+    }
 }
 
 /// <summary>
@@ -118,10 +225,21 @@ public struct MovementSourceBuffer : IEquatable<MovementSourceBuffer>
     /// </summary>
     public const int Capacity = 16;
 
-    public int Count => throw new NotImplementedException();
-    public bool IsFull => throw new NotImplementedException();
+    private Storage _sources;
+    private int _count;
 
-    public MovementSourceState this[int index] => throw new NotImplementedException();
+    [InlineArray(Capacity)]
+    private struct Storage
+    {
+        private MovementSourceState _element0;
+    }
+
+    public int Count => _count;
+    public bool IsFull => _count >= Capacity;
+
+    public MovementSourceState this[int index] => (uint)index < (uint)_count
+        ? _sources[index]
+        : throw new ArgumentOutOfRangeException(nameof(index));
 
     /// <summary>
     /// Adds a source, or replaces the existing one with the same identity so a
@@ -132,10 +250,113 @@ public struct MovementSourceBuffer : IEquatable<MovementSourceBuffer>
     /// the oldest would make the result depend on arrival order, and growing
     /// would break the copy cost this type exists to bound.
     /// </returns>
-    public bool TryAddOrReplace(in MovementSourceState source) =>
-        throw new NotImplementedException();
+    public bool TryAddOrReplace(in MovementSourceState source)
+    {
+        if (!source.IsValid)
+        {
+            throw new ArgumentOutOfRangeException(nameof(source));
+        }
 
-    public bool Remove(ulong sourceId) => throw new NotImplementedException();
+        for (var index = 0; index < _count; index++)
+        {
+            if (_sources[index].SourceId == source.SourceId)
+            {
+                _sources[index] = source;
+                return true;
+            }
+        }
+
+        if (IsFull)
+        {
+            return false;
+        }
+
+        // Inserted in ascending identity order so aggregation sums in a stable
+        // sequence; floating-point addition is not associative, so insertion
+        // order would otherwise leak into the result.
+        var insertAt = _count;
+        for (var index = 0; index < _count; index++)
+        {
+            if (_sources[index].SourceId > source.SourceId)
+            {
+                insertAt = index;
+                break;
+            }
+        }
+
+        for (var index = _count; index > insertAt; index--)
+        {
+            _sources[index] = _sources[index - 1];
+        }
+
+        _sources[insertAt] = source;
+        _count++;
+        return true;
+    }
+
+    public bool Remove(ulong sourceId)
+    {
+        for (var index = 0; index < _count; index++)
+        {
+            if (_sources[index].SourceId != sourceId)
+            {
+                continue;
+            }
+
+            RemoveAt(index);
+            return true;
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// Drops every source whose lifetime ended at or before the given frame.
+    /// Called once per frame so expiry is a function of the frame number rather
+    /// than of how many times the frame was simulated.
+    /// </summary>
+    public int RemoveExpired(SimulationInstant frame)
+    {
+        var removed = 0;
+        for (var index = _count - 1; index >= 0; index--)
+        {
+            if (frame.Tick >= _sources[index].EndFrameExclusive.Tick)
+            {
+                RemoveAt(index);
+                removed++;
+            }
+        }
+
+        return removed;
+    }
+
+    /// <summary>
+    /// Sums every active source's contribution on the given frame, in stable
+    /// identity order.
+    /// </summary>
+    public (HorizontalVector Horizontal, double Vertical) Aggregate(SimulationInstant frame)
+    {
+        var horizontal = HorizontalVector.Zero;
+        var vertical = 0d;
+        for (var index = 0; index < _count; index++)
+        {
+            var (sourceHorizontal, sourceVertical) = _sources[index].EvaluateOn(frame);
+            horizontal += sourceHorizontal;
+            vertical += sourceVertical;
+        }
+
+        return (horizontal, vertical);
+    }
+
+    public void Clear()
+    {
+        for (var index = 0; index < _count; index++)
+        {
+            _sources[index] = default;
+        }
+
+        _count = 0;
+    }
 
     /// <summary>
     /// Value equality over the occupied entries only.
@@ -148,31 +369,52 @@ public struct MovementSourceBuffer : IEquatable<MovementSourceBuffer>
     /// a path that runs per retained frame. The reference-buffer types on
     /// <see cref="CharacterSimulationInput"/> already follow this pattern.
     /// </remarks>
-    public bool Equals(MovementSourceBuffer other) => throw new NotImplementedException();
+    public bool Equals(MovementSourceBuffer other)
+    {
+        if (_count != other._count)
+        {
+            return false;
+        }
 
-    public override bool Equals(object? obj) => throw new NotImplementedException();
+        for (var index = 0; index < _count; index++)
+        {
+            if (!_sources[index].Equals(other._sources[index]))
+            {
+                return false;
+            }
+        }
 
-    public override int GetHashCode() => throw new NotImplementedException();
+        return true;
+    }
+
+    public override bool Equals(object? obj) =>
+        obj is MovementSourceBuffer other && Equals(other);
+
+    public override int GetHashCode()
+    {
+        var hash = new HashCode();
+        hash.Add(_count);
+        for (var index = 0; index < _count; index++)
+        {
+            hash.Add(_sources[index]);
+        }
+
+        return hash.ToHashCode();
+    }
 
     public static bool operator ==(MovementSourceBuffer left, MovementSourceBuffer right) =>
-        throw new NotImplementedException();
+        left.Equals(right);
 
     public static bool operator !=(MovementSourceBuffer left, MovementSourceBuffer right) =>
-        throw new NotImplementedException();
+        !left.Equals(right);
 
-    /// <summary>
-    /// Drops every source whose lifetime ended at or before the given frame.
-    /// Called once per frame so expiry is a function of the frame number rather
-    /// than of how many times the frame was simulated.
-    /// </summary>
-    public int RemoveExpired(SimulationInstant frame) => throw new NotImplementedException();
+    private void RemoveAt(int index)
+    {
+        for (var shift = index; shift < _count - 1; shift++)
+        {
+            _sources[shift] = _sources[shift + 1];
+        }
 
-    /// <summary>
-    /// Sums every active source's contribution on the given frame, in stable
-    /// identity order.
-    /// </summary>
-    public (HorizontalVector Horizontal, double Vertical) Aggregate(SimulationInstant frame) =>
-        throw new NotImplementedException();
-
-    public void Clear() => throw new NotImplementedException();
+        _sources[--_count] = default;
+    }
 }

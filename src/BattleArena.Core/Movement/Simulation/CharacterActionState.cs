@@ -42,7 +42,25 @@ public readonly record struct CharacterActionState
         int stepIndex,
         SimulationInstant startedAt,
         bool continuationQueued,
-        bool releasedDuringStep) => throw new NotImplementedException();
+        bool releasedDuringStep)
+    {
+        if (!Enum.IsDefined(phase))
+        {
+            throw new ArgumentOutOfRangeException(nameof(phase));
+        }
+        if (stepIndex < 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(stepIndex));
+        }
+
+        PredictedActionId = predictedActionId;
+        AuthorityExecutionId = authorityExecutionId;
+        Phase = phase;
+        StepIndex = stepIndex;
+        StartedAt = startedAt;
+        ContinuationQueued = continuationQueued;
+        ReleasedDuringStep = releasedDuringStep;
+    }
 
     /// <summary>The owner's correlation identity, valid while an action is predicted.</summary>
     public PredictedActionId PredictedActionId { get; }
@@ -70,8 +88,8 @@ public readonly record struct CharacterActionState
     /// <summary>Whether attack was released during this step, for hold-sensitive policies.</summary>
     public bool ReleasedDuringStep { get; }
 
-    public bool IsActive => throw new NotImplementedException();
-    public bool IsValid => throw new NotImplementedException();
+    public bool IsActive => Phase is not PredictedActionPhase.None;
+    public bool IsValid => Enum.IsDefined(Phase) && StepIndex >= 0;
     public static CharacterActionState Idle => default;
 }
 
@@ -88,16 +106,44 @@ public readonly record struct CharacterActionState
 /// </remarks>
 public readonly record struct DeterministicCounterState
 {
-    public DeterministicCounterState(int airJumpsUsed, int airRollsUsed) =>
-        throw new NotImplementedException();
+    public DeterministicCounterState(int airJumpsUsed, int airRollsUsed)
+    {
+        if (airJumpsUsed < 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(airJumpsUsed));
+        }
+        if (airRollsUsed < 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(airRollsUsed));
+        }
+
+        AirJumpsUsed = airJumpsUsed;
+        AirRollsUsed = airRollsUsed;
+    }
 
     public int AirJumpsUsed { get; }
     public int AirRollsUsed { get; }
-    public bool IsValid => throw new NotImplementedException();
+    public bool IsValid => AirJumpsUsed >= 0 && AirRollsUsed >= 0;
     public static DeterministicCounterState Empty => default;
 
     /// <summary>Refunds every air allowance, applied on landing.</summary>
-    public DeterministicCounterState ResetOnGrounded() => throw new NotImplementedException();
+    public DeterministicCounterState ResetOnGrounded() => default;
+}
+
+/// <summary>
+/// The kind of one transition applying on a frame, decoupled from the
+/// multiplayer journal type so <c>BattleArena.Core</c> keeps no dependency on
+/// the networking assembly.
+/// </summary>
+public enum MovementTransitionKindTag : byte
+{
+    JumpPressed = 1,
+    JumpReleased = 2,
+    CrouchOrRollPressed = 3,
+    CrouchOrRollReleased = 4,
+    LedgeGrab = 5,
+    LedgeClimb = 6,
+    LedgeDrop = 7,
 }
 
 /// <summary>
@@ -107,8 +153,8 @@ public readonly record struct DeterministicCounterState
 /// <remarks>
 /// <para>
 /// The accepted rule simulators are written against edges —
-/// <c>JumpFallSimulator</c> reads jump pressed and released,
-/// <c>CrouchRollSimulator</c> reads crouch/roll pressed — but
+/// <see cref="JumpFallSimulator"/> reads jump pressed and released,
+/// <see cref="CrouchRollSimulator"/> reads crouch/roll pressed — but
 /// <see cref="CharacterSimulationInput"/> deliberately carries only held state
 /// plus durable transition references. That is not an oversight: P03-05 exists
 /// precisely because a discrete edge must not depend on one transient bit
@@ -137,8 +183,35 @@ public static class OwnerInputEdgeMapper
     /// reproducible.
     /// </param>
     public static (MovementButtons Pressed, MovementButtons Released) EdgesFor(
-        ReadOnlySpan<MovementTransitionKindTag> appliedTransitions) =>
-        throw new NotImplementedException();
+        ReadOnlySpan<MovementTransitionKindTag> appliedTransitions)
+    {
+        var pressed = MovementButtons.None;
+        var released = MovementButtons.None;
+        for (var index = 0; index < appliedTransitions.Length; index++)
+        {
+            switch (appliedTransitions[index])
+            {
+                case MovementTransitionKindTag.JumpPressed:
+                    pressed |= MovementButtons.Jump;
+                    break;
+                case MovementTransitionKindTag.JumpReleased:
+                    released |= MovementButtons.Jump;
+                    break;
+                case MovementTransitionKindTag.CrouchOrRollPressed:
+                    pressed |= MovementButtons.CrouchOrRoll;
+                    break;
+                case MovementTransitionKindTag.CrouchOrRollReleased:
+                    released |= MovementButtons.CrouchOrRoll;
+                    break;
+                default:
+                    // Ledge transitions carry no button edge; they are consumed
+                    // by traversal rules rather than by the button grammar.
+                    break;
+            }
+        }
+
+        return (pressed, released);
+    }
 
     /// <summary>
     /// Builds the legacy <see cref="MovementCommand"/> the rule simulators
@@ -147,21 +220,53 @@ public static class OwnerInputEdgeMapper
     public static MovementCommand ToMovementCommand(
         in CharacterSimulationInput input,
         ReadOnlySpan<MovementTransitionKindTag> appliedTransitions,
-        SimulationInstant frame) => throw new NotImplementedException();
-}
+        SimulationInstant frame)
+    {
+        var (pressed, released) = EdgesFor(appliedTransitions);
+        var held = HeldButtonsFrom(input);
 
-/// <summary>
-/// The kind of one transition applying on a frame, decoupled from the
-/// multiplayer journal type so <c>BattleArena.Core</c> keeps no dependency on
-/// the networking assembly.
-/// </summary>
-public enum MovementTransitionKindTag : byte
-{
-    JumpPressed = 1,
-    JumpReleased = 2,
-    CrouchOrRollPressed = 3,
-    CrouchOrRollReleased = 4,
-    LedgeGrab = 5,
-    LedgeClimb = 6,
-    LedgeDrop = 7,
+        // A press implies the button is held on that frame even if the held mask
+        // arrived without it, which happens when the press and its packet race.
+        held |= pressed;
+        return new MovementCommand(
+            0UL,
+            frame,
+            new HorizontalVector(
+                input.Movement.XQ15 / (double)MovementAxes.MaximumMagnitude,
+                input.Movement.ZQ15 / (double)MovementAxes.MaximumMagnitude),
+            input.View.YawRadians,
+            input.View.PitchRadians,
+            held,
+            pressed,
+            released);
+    }
+
+    /// <summary>Projects the canonical held state into the legacy button mask.</summary>
+    public static MovementButtons HeldButtonsFrom(in CharacterSimulationInput input)
+    {
+        var held = MovementButtons.None;
+        var movement = input.MovementHeld.Buttons;
+        if ((movement & MovementHeldButtons.Jump) != 0)
+        {
+            held |= MovementButtons.Jump;
+        }
+        if ((movement & MovementHeldButtons.Sprint) != 0)
+        {
+            held |= MovementButtons.Sprint;
+        }
+        if ((movement & MovementHeldButtons.CrouchOrRoll) != 0)
+        {
+            held |= MovementButtons.CrouchOrRoll;
+        }
+        if ((input.CombatInput.HeldButtons & CombatHeldButtons.Attack) != 0)
+        {
+            held |= MovementButtons.Attack;
+        }
+        if ((input.CombatInput.HeldButtons & CombatHeldButtons.Block) != 0)
+        {
+            held |= MovementButtons.Block;
+        }
+
+        return held;
+    }
 }
