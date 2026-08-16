@@ -20,7 +20,8 @@ public readonly record struct CapsuleSweepRequest
         HorizontalVector horizontalMotion,
         double verticalMotion,
         CollisionProfileKind profile,
-        SupportIdentity excludedCollider)
+        SupportIdentity excludedCollider,
+        double walkableSlopeRadians)
     {
         if (!origin.IsFinite || !horizontalMotion.IsFinite || !double.IsFinite(verticalMotion))
         {
@@ -36,6 +37,7 @@ public readonly record struct CapsuleSweepRequest
         VerticalMotion = verticalMotion;
         Profile = profile;
         ExcludedCollider = excludedCollider;
+        WalkableSlopeRadians = walkableSlopeRadians;
     }
 
     public WorldPosition Origin { get; }
@@ -48,6 +50,18 @@ public readonly record struct CapsuleSweepRequest
     /// step solver's deliberate re-query against a surface it just left.
     /// </summary>
     public SupportIdentity ExcludedCollider { get; }
+
+    /// <summary>
+    /// The threshold contacts are classified against, carried on the request.
+    /// </summary>
+    /// <remarks>
+    /// Revisioned content, so it travels with the frame rather than living on the
+    /// world adapter. Holding it on the adapter would mean a mid-match
+    /// configuration change updated the motor while the adapter kept classifying
+    /// against the old threshold — and it would be state read during a replayed
+    /// frame that is neither in the rewind unit nor derived from its inputs.
+    /// </remarks>
+    public double WalkableSlopeRadians { get; }
 
     public bool IsValid =>
         Origin.IsFinite &&

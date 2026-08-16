@@ -55,6 +55,20 @@ public partial class MovementTestPlayer : CharacterBody3D
     private MovementAttributeSnapshot _attributes = null!;
     private MovementCapabilitySnapshot _capabilities = null!;
     private CapsuleMotionOutcome _lastExplicitOutcome = CapsuleMotionOutcome.Completed;
+
+    /// <summary>
+    /// The runtime state of whichever motor is actually driving this frame.
+    /// </summary>
+    /// <remarks>
+    /// Presentation, animation, camera offset, and diagnostics all read through
+    /// here. Reading the legacy driver directly would leave every one of them
+    /// frozen at spawn under the explicit motor, which would make the arena
+    /// useless for the one thing it exists for: judging whether the explicit
+    /// motor still feels right.
+    /// </remarks>
+    private MovementRuntimeState ActiveState => _explicitSimulator is not null
+        ? _explicitState.ToRuntimeState()
+        : _movementDriver.State;
     private Node3D _visualRoot = null!;
     private RiggedCharacterView _characterView = null!;
     private Node3D _cameraYaw = null!;
@@ -114,9 +128,9 @@ public partial class MovementTestPlayer : CharacterBody3D
     {
         var smoothingWeight = 1f - Mathf.Exp(-18f * (float)delta);
         _stepPresentationOffset = Mathf.Lerp(_stepPresentationOffset, 0f, smoothingWeight);
-        var targetPostureOffset = _movementDriver.State.LocomotionMode == LocomotionMode.Rolling
+        var targetPostureOffset = ActiveState.LocomotionMode == LocomotionMode.Rolling
             ? -0.7f
-            : _movementDriver.State.PostureMode == PostureMode.Crouched ? -0.42f : 0f;
+            : ActiveState.PostureMode == PostureMode.Crouched ? -0.42f : 0f;
         _posturePresentationOffset = Mathf.Lerp(
             _posturePresentationOffset,
             targetPostureOffset,
@@ -206,7 +220,6 @@ public partial class MovementTestPlayer : CharacterBody3D
         _collisionWorld.Initialize(
             CollisionProfileTable.FromAttributes(_attributes),
             staticWorldMask: CollisionMask);
-        _collisionWorld.SetWalkableSlope(_attributes.Ground.MaximumFloorAngleRadians);
 
         _explicitSimulator = new CharacterMovementSimulator(
             new CapsuleMovementSimulator(_collisionWorld),
@@ -391,7 +404,7 @@ public partial class MovementTestPlayer : CharacterBody3D
 
         _visualRoot.Rotation = new Vector3(
             0f,
-            (float)_movementDriver.State.FacingYawRadians,
+            (float)ActiveState.FacingYawRadians,
             0f);
         UpdateAnimation(delta);
         UpdateDiagnostics();
@@ -399,13 +412,13 @@ public partial class MovementTestPlayer : CharacterBody3D
 
     private void UpdateAnimation(double delta)
     {
-        var rolling = _movementDriver.State.LocomotionMode == LocomotionMode.Rolling;
+        var rolling = ActiveState.LocomotionMode == LocomotionMode.Rolling;
         if (rolling)
         {
             if (!_wasRolling)
             {
                 var duration = (double)new SimulationRate(Engine.PhysicsTicksPerSecond)
-                    .SecondsFromDuration(_movementDriver.State.RollDuration);
+                    .SecondsFromDuration(ActiveState.RollDuration);
                 _characterView.PlayForDuration(CharacterAnimationIds.RollForward, duration);
             }
 
@@ -414,19 +427,19 @@ public partial class MovementTestPlayer : CharacterBody3D
         }
 
         _wasRolling = false;
-        if (_movementDriver.State.PostureMode == PostureMode.Crouched)
+        if (ActiveState.PostureMode == PostureMode.Crouched)
         {
             _characterView.Play(
-                _movementDriver.State.HorizontalVelocity.Length > 0.1d
+                ActiveState.HorizontalVelocity.Length > 0.1d
                     ? CharacterAnimationIds.CrouchMove
                     : CharacterAnimationIds.CrouchIdle);
             return;
         }
 
-        var yaw = _movementDriver.State.FacingYawRadians;
+        var yaw = ActiveState.FacingYawRadians;
         var cosine = Math.Cos(yaw);
         var sine = Math.Sin(yaw);
-        var velocity = _movementDriver.State.HorizontalVelocity;
+        var velocity = ActiveState.HorizontalVelocity;
         var localRight = (velocity.X * cosine) - (velocity.Z * sine);
         var localForward = (-velocity.X * sine) - (velocity.Z * cosine);
         var normalizedVelocity = new Vector2(
@@ -434,24 +447,36 @@ public partial class MovementTestPlayer : CharacterBody3D
             (float)(localForward / _movementDriver.Attributes.Ground.MaximumRunSpeed));
         _characterView.SetLocomotion(
             normalizedVelocity,
-            _movementDriver.State.LocomotionMode == LocomotionMode.Airborne,
+            ActiveState.LocomotionMode == LocomotionMode.Airborne,
             delta);
     }
 
+    /// <summary>
+    /// Grounding as the active motor sees it.
+    /// </summary>
+    /// <remarks>
+    /// Under the explicit motor <c>IsOnFloor</c> reports the body's own state,
+    /// which nothing updates because the node is positioned from simulation
+    /// rather than moved by it. Reading simulation is the only honest answer.
+    /// </remarks>
+    private bool GroundedForDisplay() => _explicitSimulator is not null
+        ? _explicitState.Kinematic.IsGrounded
+        : IsOnFloor();
+
     private void UpdateDiagnostics()
     {
-        var speed = _movementDriver.State.HorizontalVelocity.Length;
+        var speed = ActiveState.HorizontalVelocity.Length;
         _diagnostics.Text =
             $"GROUND MOVEMENT LAB\n" +
             $"Speed  {speed:0.00} m/s\n" +
             $"Target {(_movementDriver.Attributes.Ground.MaximumRunSpeed):0.0} run / " +
             $"{(_movementDriver.Attributes.Ground.MaximumSprintSpeed):0.0} sprint\n" +
-            $"Facing {Mathf.RadToDeg((float)_movementDriver.State.FacingYawRadians):0}°\n" +
-            $"Mode   {_movementDriver.State.LocomotionMode}\n" +
-            $"Jump   {_movementDriver.State.JumpPhase}\n" +
-            $"Posture {_movementDriver.State.PostureMode}\n" +
+            $"Facing {Mathf.RadToDeg((float)ActiveState.FacingYawRadians):0}°\n" +
+            $"Mode   {ActiveState.LocomotionMode}\n" +
+            $"Jump   {ActiveState.JumpPhase}\n" +
+            $"Posture {ActiveState.PostureMode}\n" +
             $"Floor  {(IsOnFloor() ? "grounded" : "falling")}\n" +
-            $"Vert   {_movementDriver.State.VerticalVelocity:0.00} m/s\n\n" +
+            $"Vert   {ActiveState.VerticalVelocity:0.00} m/s\n\n" +
             $"Step   {_lastStepOutcome}\n\n" +
             $"Reject {_movementDriver.LastStepRejectionReason}\n\n" +
             $"WASD / left stick   Move\n" +
@@ -466,10 +491,23 @@ public partial class MovementTestPlayer : CharacterBody3D
 
     private void ResetToSpawn()
     {
+        // The explicit motor owns position, so resetting the node alone would be
+        // undone on the next frame when simulation writes its stale position
+        // back. Reseeding is what makes the reset actually take.
         GlobalTransform = _spawnTransform;
         Velocity = Vector3.Zero;
         _movementDriver.Reset(
             MovementRuntimeState.CreateGrounded(new SimulationInstant(_tick)));
+        if (_explicitSimulator is not null)
+        {
+            _explicitState = CharacterSimulationState.CreateGrounded(
+                new WorldPosition(GlobalPosition.X, GlobalPosition.Y, GlobalPosition.Z),
+                _viewYaw,
+                new SimulationInstant(_tick),
+                new MovementConfigurationRevision(1),
+                new MovementCapabilityRevision(1));
+        }
+
         _stepPresentationOffset = 0f;
         _posturePresentationOffset = 0f;
     }

@@ -1262,8 +1262,54 @@ it against the real API); and P05-11's player-clearance acceptance, which cannot
 be met by a static-only world and belongs with Phase 9 frame-aligned collision.
 
 
-- [ ] **P05-01 — Define compact kinematic and contact state.**
-  - Status: **Implemented**.
+### Implementation review outcome (one critic over the whole phase)
+
+One blocker, six majors. The blocker was the one that changed how the game feels.
+
+- **The motor never folded collision-resolved velocity back into state.**
+  `SweepAndSlide` projected the frame's *motion* onto each contact plane but left
+  velocity untouched, so a character pressed into a wall kept full speed forever.
+  The accepted driver got this for free by reading body velocity back after
+  `MoveAndSlide`, and that readback *is* the deceleration. Consequences went well
+  past feel: `JumpFallSimulator` adds a bonus proportional to horizontal speed,
+  so jumping into a wall granted the full bonus for speed the character did not
+  have, and `CrouchRollSimulator` gates roll entry and boost distance on the same
+  value, so a character pinned to a wall could roll at full boost from a
+  standstill. Velocity is now projected onto the same planes as the motion.
+  Two tests lock it, and neither existed before: the whole suite asserted on
+  position and never once on velocity.
+- **Landing did not clear downward velocity**, so a landing roll carried the
+  entire fall speed for its duration and leaving a ledge mid-roll dropped
+  instantly. Same root cause; fixed alongside, with its own test.
+- **The dual-motor arena rendered from the motor that was not running.**
+  Presentation, animation, camera offset, and the diagnostics label all read the
+  legacy driver directly, so under the explicit motor every one of them was
+  frozen at spawn — which made the arena useless for the single thing P05-16
+  exists for. They now read the active motor through one accessor. `ResetToSpawn`
+  also failed to reseed the explicit state, so falling below the reset height was
+  an unrecoverable loop.
+- **The walkable-slope threshold was mutable adapter state** read during
+  `Simulate`, outside the rewind unit and outside the revision. It now travels on
+  `CapsuleSweepRequest`, so a replayed frame classifies contacts against the
+  revision it was simulated under.
+- **The golden suite asserted only end states**, so a divergence that appeared
+  mid-trace and re-converged would pass. Restore-and-replay now compares every
+  frame. The two-run test is documented as the weaker of the two — over a pure
+  function it is close to true by construction, and what it actually proves is
+  that nothing holds hidden per-instance state.
+- Motor fixes: stepping is now attempted when the slide iteration cap is hit
+  (a busy corner at the foot of a staircase is exactly where stepping matters);
+  the step down-probe is bounded by how far the up-probe actually rose rather
+  than the full step height; blocking-contact selection skips contacts the motion
+  is travelling away from instead of abandoning the frame; the step solver's
+  remaining motion is measured from the post-recovery position so a depenetration
+  push is not mistaken for spent motion; and overlap at or below an authored
+  margin depth is ignored, because a resting capsule legitimately reports
+  margin-scale overlap and recovering it every frame would fight ground snap.
+
+
+- [x] **P05-01 — Define compact kinematic and contact state.**
+  - Status: **Implemented And Reviewed**.
   - Purpose: Own position, velocity, facing, grounded, normal, support behavior,
     and stable contact facts in replayable value state.
   - Target files: `CharacterKinematicState.cs`,
@@ -1271,16 +1317,16 @@ be met by a static-only world and belongs with Phase 9 frame-aligned collision.
   - Verification: Finite-value, tolerant-contact, seam-equivalence, and copy
     semantics pass without per-frame allocation.
 
-- [ ] **P05-02 — Define collision profile state and bounds.**
-  - Status: **Implemented**.
+- [x] **P05-02 — Define collision profile state and bounds.**
+  - Status: **Implemented And Reviewed**.
   - Purpose: Represent standing/crouching/rolling profiles by stable identity and
     validated dimensions.
   - Target files: `CollisionProfileState.cs`,
     `CollisionProfileStateTests.cs`.
   - Verification: Profile validation and legal shrink/expansion intent tests pass.
 
-- [ ] **P05-03 — Define bounded movement-source state.**
-  - Status: **Implemented**.
+- [x] **P05-03 — Define bounded movement-source state.**
+  - Status: **Implemented And Reviewed**.
   - Purpose: Store replayable lunge, roll, dash, knockback, pull, and future item
     motion in a fixed-capacity value buffer.
   - Target files: `MovementSourceState.cs`, `MovementSourceBuffer.cs`,
@@ -1288,8 +1334,8 @@ be met by a static-only world and belongs with Phase 9 frame-aligned collision.
   - Verification: Capacity, stable ordering, lifecycle, copy, aggregation, and
     no-allocation tests pass.
 
-- [ ] **P05-04 — Define the aggregate character simulation state.**
-  - Status: **Implemented**.
+- [x] **P05-04 — Define the aggregate character simulation state.**
+  - Status: **Implemented And Reviewed**.
   - Purpose: Combine movement, action, contact, profile, sources, revisions, and
     deterministic counters into the complete rewind unit.
   - Target files: `CharacterSimulationState.cs`,
@@ -1297,16 +1343,16 @@ be met by a static-only world and belongs with Phase 9 frame-aligned collision.
   - Verification: Complete-copy/equality tests prove no prediction-relevant field
     is omitted and authority-only hit/damage state cannot be stored.
 
-- [ ] **P05-05 — Define query-neutral collision contracts.**
-  - Status: **Implemented**.
+- [x] **P05-05 — Define query-neutral collision contracts.**
+  - Status: **Implemented And Reviewed**.
   - Purpose: Isolate sweep, ground probe, clearance, and support motion from Godot
     nodes and presentation.
   - Target files: `ICharacterCollisionWorld.cs`,
     `CharacterCollisionContracts.cs`, `CharacterCollisionContractsTests.cs`.
   - Verification: Contract validation and deterministic fake-world tests pass.
 
-- [ ] **P05-06 — Implement the static Godot query adapter.**
-  - Status: **Implemented**.
+- [x] **P05-06 — Implement the static Godot query adapter.**
+  - Status: **Implemented And Reviewed**.
   - Purpose: Execute explicit-transform capsule queries with precreated profile
     RIDs, static-only masks, exclusions, and reusable buffers.
   - Target files: `GodotKinematicCollisionWorld.cs`,
@@ -1314,8 +1360,8 @@ be met by a static-only world and belongs with Phase 9 frame-aligned collision.
   - Verification: Headless probe proves no live-node movement, no dynamic hits,
     reusable results, and same-frame query/commit behavior.
 
-- [ ] **P05-07 — Implement bounded sweep and penetration recovery.**
-  - Status: **Implemented**.
+- [x] **P05-07 — Implement bounded sweep and penetration recovery.**
+  - Status: **Implemented And Reviewed**.
   - Purpose: Resolve desired capsule travel and recover legal shallow overlap from
     explicit state.
   - Target files: `CapsuleMovementSimulator.cs`,
@@ -1323,8 +1369,8 @@ be met by a static-only world and belongs with Phase 9 frame-aligned collision.
   - Verification: Free travel, wall impact, high speed, starting overlap, bounded
     iterations, and unrecoverable penetration pass.
 
-- [ ] **P05-08 — Implement stable slide resolution.**
-  - Status: **Implemented**.
+- [x] **P05-08 — Implement stable slide resolution.**
+  - Status: **Implemented And Reviewed**.
   - Purpose: Resolve multiple contacts in stable fraction/collider/shape/normal
     order without node iteration dependence.
   - Target files: `CapsuleMovementSimulator.cs`,
@@ -1332,8 +1378,8 @@ be met by a static-only world and belongs with Phase 9 frame-aligned collision.
   - Verification: Wall slide, convex/concave corner, reorder, duplicate contact,
     and iteration-cap traces pass.
 
-- [ ] **P05-09 — Implement slope classification and ground snap.**
-  - Status: **Implemented**.
+- [x] **P05-09 — Implement slope classification and ground snap.**
+  - Status: **Implemented And Reviewed**.
   - Purpose: Reproduce walkable/unwalkable slopes, explicit ground probing, and
     no snap while rising.
   - Target files: `CapsuleMovementSimulator.cs`,
@@ -1341,8 +1387,8 @@ be met by a static-only world and belongs with Phase 9 frame-aligned collision.
   - Verification: Slope thresholds, descent, edge departure, rising jump, seam,
     and normal tolerance tests pass.
 
-- [ ] **P05-10 — Implement explicit stair/step solving.**
-  - Status: **Implemented**.
+- [x] **P05-10 — Implement explicit stair/step solving.**
+  - Status: **Implemented And Reviewed**.
   - Purpose: Generalize up-forward-down stepping for direct and strafing entry
     without changing the map to hide lips.
   - Target files: `CapsuleMovementSimulator.cs`,
@@ -1350,8 +1396,8 @@ be met by a static-only world and belongs with Phase 9 frame-aligned collision.
   - Verification: Thin/thick ramps, every stair direction, shallow lips, blocked
     headroom, and no-progress rejection pass.
 
-- [ ] **P05-11 — Implement ceiling and profile-clearance rules.**
-  - Status: **Implemented**.
+- [x] **P05-11 — Implement ceiling and profile-clearance rules.**
+  - Status: **Implemented And Reviewed**.
   - Purpose: Stop upward motion on ceilings and allow profile expansion only when
     static/player clearance permits it.
   - Target files: `CapsuleMovementSimulator.cs`,
@@ -1359,16 +1405,16 @@ be met by a static-only world and belongs with Phase 9 frame-aligned collision.
   - Verification: Ceiling hit, crouch/roll shrink, blocked stand, delayed stand,
     and forced-expansion policy pass.
 
-- [ ] **P05-12 — Compose ground and airborne locomotion.**
-  - Status: **Implemented**.
+- [x] **P05-12 — Compose ground and airborne locomotion.**
+  - Status: **Implemented And Reviewed**.
   - Purpose: Reuse accepted acceleration, run/sprint, momentum, air-control, and
     falling rules through the explicit motor.
   - Target files: `CharacterMovementSimulator.cs`,
     `CharacterLocomotionIntegrationTests.cs`, `CapsuleMovementSimulator.cs`.
   - Verification: Existing movement golden curves match accepted tolerances.
 
-- [ ] **P05-13 — Integrate jump state and durable transitions.**
-  - Status: **Implemented**.
+- [x] **P05-13 — Integrate jump state and durable transitions.**
+  - Status: **Implemented And Reviewed**.
   - Purpose: Preserve variable hold, coyote, buffering, apex, fast fall, momentum,
     lateral control, and air sprint under restore/replay.
   - Target files: `CharacterMovementSimulator.cs`,
@@ -1376,16 +1422,16 @@ be met by a static-only world and belongs with Phase 9 frame-aligned collision.
   - Verification: Restore/replay from every jump frame yields the same final
     canonical state.
 
-- [ ] **P05-14 — Integrate crouch and roll state.**
-  - Status: **Implemented**.
+- [x] **P05-14 — Integrate crouch and roll state.**
+  - Status: **Implemented And Reviewed**.
   - Purpose: Preserve hold-to-crouch, moving roll, tap/hold duration, momentum,
     steering, cooldown, landing roll, and non-cancelability.
   - Target files: `CharacterMovementSimulator.cs`,
     `CharacterRollReplayTests.cs`, `CrouchRollSimulator.cs`.
   - Verification: Restore/replay and accepted roll-distance/timing traces pass.
 
-- [ ] **P05-15 — Integrate replayable external movement sources.**
-  - Status: **Implemented**.
+- [x] **P05-15 — Integrate replayable external movement sources.**
+  - Status: **Implemented And Reviewed**.
   - Purpose: Apply source curves in the canonical frame order instead of mutating
     node velocity once.
   - Target files: `MovementSourceSimulator.cs`,
@@ -1393,8 +1439,8 @@ be met by a static-only world and belongs with Phase 9 frame-aligned collision.
   - Verification: Start/progress/stack/end, F-start lunge, and F+1 hit-knockback
     traces pass.
 
-- [ ] **P05-16 — Add the dual-motor offline test adapter.**
-  - Status: **Implemented**.
+- [x] **P05-16 — Add the dual-motor offline test adapter.**
+  - Status: **Implemented And Reviewed**.
   - Purpose: Let the existing movement arena switch between Legacy and
     ExplicitQueryMotor without changing accepted content values.
   - Target files: `MovementTestPlayer.cs`, `movement_test_arena.tscn`,
@@ -1402,14 +1448,55 @@ be met by a static-only world and belongs with Phase 9 frame-aligned collision.
   - Verification: Both modes launch headlessly and the selected mode is visible
     in diagnostics.
 
-- [ ] **P05-17 — Lock the explicit-motor golden suite.**
-  - Status: **Implemented**.
+- [x] **P05-17 — Lock the explicit-motor golden suite.**
+  - Status: **Implemented And Reviewed**.
   - Purpose: Cover the complete arena course and 10,000-frame restore/replay
     reproducibility before networking cutover.
   - Target files: `ExplicitMotorGoldenTraceTests.cs`,
     `MovementGoldenTraceData.cs`, `run_movement_golden_tests.ps1`.
   - Verification: All accepted run/sprint/jump/roll/stair/ramp/wall/ceiling traces
     and every replay pivot pass with zero unexplained divergence.
+
+
+- [ ] **P05-18 — Verify the Godot collision adapter in-engine.**
+  - Purpose: `GodotKinematicCollisionWorld` has no test and no probe. P01-09
+    proved the query *approach* but exercised a different class, and the adapter
+    added a path the probe deliberately never ran: `ResolveOverlap` uses
+    `RecoveryAsCollision = true`, which the probe kept disabled throughout, and
+    it runs before every frame's motion.
+  - Target files: `GodotKinematicCollisionWorldTests.cs`,
+    `kinematic_query_probe.tscn`, `run_kinematic_query_probe.ps1`.
+  - Verification: A headless probe proves no live-node movement, no dynamic
+    hits, correct foot-versus-centre capsule offset, stable collider identity,
+    reusable results, explicit `Margin` and `CollideSeparationRay`, and that a
+    resting capsule does not oscillate between recovery and ground snap.
+  - Blocking note: this must land before V2 movement is enabled on a real
+    build. Until then the explicit motor is exercised only against the
+    deterministic world and the offline arena.
+
+- [ ] **P05-19 — Store contact facts in the rewind unit.**
+  - Purpose: P05-01 promised "stable contact facts in replayable value state",
+    and `CollisionContactState` exists only as scratch inside the motor.
+    Contacts are derivable, so this is not a determinism break — but P06-01
+    stores contacts in history, P06-03 classifies contact replay, and P06-04
+    keys a correction reason on them, so all three would otherwise reopen the
+    rewind unit, which is a protocol change.
+  - Target files: `CharacterSimulationState.cs`, `CharacterMovementSimulator.cs`,
+    `CharacterSimulationStateTests.cs`.
+  - Verification: Contacts survive restore/replay identically and the bounded
+    storage allocates nothing per frame.
+
+- [ ] **P05-20 — Supply attack movement influence to the explicit motor.**
+  - Purpose: `CharacterMovementSimulator.InfluenceFor` returns null
+    unconditionally. The plumbing is complete — `CharacterActionState` carries
+    the step index through restore — but the authored policy mapping a step to
+    its influence is combat content owned by P08-01. Today `NetworkAvatar`
+    passes a live influence into the legacy driver, so the explicit path loses
+    accepted attack-movement feel the moment V2 becomes the movement source.
+  - Target files: `CharacterMovementSimulator.cs`, `CharacterActionState.cs`.
+  - Verification: Sprint gating, momentum preservation, and the acceleration and
+    steering multipliers reproduce the legacy driver's behaviour for each
+    authored attack step, under restore and replay.
 
 ## Phase 6 — Owner History and Exact Reconciliation
 

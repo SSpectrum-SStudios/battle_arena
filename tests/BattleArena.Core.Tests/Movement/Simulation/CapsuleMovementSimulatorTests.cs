@@ -46,6 +46,89 @@ public sealed class CapsuleMovementSimulatorTests
     }
 
     [Fact]
+    public void DrivingIntoAWallActuallyBleedsOffTheVelocity()
+    {
+        // The deceleration. Without it a character pressed into a wall keeps full
+        // speed forever: turning away feels glued, a jump gets the full
+        // horizontal-speed bonus for speed it does not have, and a roll gated on
+        // entry speed succeeds from a standstill. The accepted driver got this by
+        // reading body velocity back after MoveAndSlide.
+        var world = new DeterministicCollisionWorld(Profiles)
+            .AddGround()
+            .AddBox(2, new WorldPosition(2d, 0d, -10d), new WorldPosition(3d, 5d, 10d));
+        var motor = new CapsuleMovementSimulator(world);
+
+        // Enough frames at a realistic per-tick step to actually reach the wall
+        // at x=2 from the origin.
+        var state = At(0d, 0d, 0d).WithVelocity(new HorizontalVector(6d, 0d), 0d);
+        for (var frame = 0; frame < 40; frame++)
+        {
+            state = motor.Move(
+                state,
+                CollisionProfileState.Standing,
+                new HorizontalVector(0.1d, 0d),
+                0d,
+                new SimulationInstant(frame),
+                new SimulationInstant(frame + 1),
+                Profiles,
+                Policy).State;
+        }
+
+        Assert.True(
+            Math.Abs(state.HorizontalVelocity.X) < 0.01d,
+            $"Velocity into the wall must be removed; X={state.HorizontalVelocity.X}.");
+    }
+
+    [Fact]
+    public void SlidingAlongAWallKeepsTheVelocityParallelToIt()
+    {
+        // Only the component driven into the surface is removed. Removing all of
+        // it would make wall contact a dead stop rather than a slide.
+        var world = new DeterministicCollisionWorld(Profiles)
+            .AddGround()
+            .AddBox(2, new WorldPosition(2d, 0d, -10d), new WorldPosition(3d, 5d, 10d));
+        var motor = new CapsuleMovementSimulator(world);
+
+        var state = At(0d, 0d, 0d).WithVelocity(new HorizontalVector(6d, 4d), 0d);
+        state = motor.Move(
+            state,
+            CollisionProfileState.Standing,
+            new HorizontalVector(4d, 2d),
+            0d,
+            new SimulationInstant(0),
+            new SimulationInstant(1),
+            Profiles,
+            Policy).State;
+
+        Assert.True(state.HorizontalVelocity.Z > 3d, "Motion along the wall must survive.");
+        Assert.True(state.HorizontalVelocity.X < 1d, "Motion into the wall must not.");
+    }
+
+    [Fact]
+    public void LandingClearsDownwardVelocity()
+    {
+        // A landed character carrying its fall speed is a canonical comparison
+        // field that is simply untrue, and any rule reading it — a landing roll,
+        // a ledge left mid-roll — acts on a lie.
+        var world = new DeterministicCollisionWorld(Profiles).AddGround();
+        var motor = new CapsuleMovementSimulator(world);
+
+        var falling = At(0d, 0.2d, 0d).WithVelocity(HorizontalVector.Zero, -15d);
+        var result = motor.Move(
+            falling,
+            CollisionProfileState.Standing,
+            HorizontalVector.Zero,
+            -0.5d,
+            new SimulationInstant(0),
+            new SimulationInstant(1),
+            Profiles,
+            Policy);
+
+        Assert.True(result.State.IsGrounded);
+        Assert.Equal(0d, result.State.VerticalVelocity, 6);
+    }
+
+    [Fact]
     public void ContactResolutionDoesNotDependOnTheOrderTheWorldReportsContacts()
     {
         // Two worlds with identical geometry added in opposite order must

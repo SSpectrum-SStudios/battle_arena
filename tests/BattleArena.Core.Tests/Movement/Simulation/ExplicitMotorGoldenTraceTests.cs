@@ -19,6 +19,15 @@ public sealed class ExplicitMotorGoldenTraceTests
     private const int TicksPerSecond = 60;
     private const long FirstFrame = 1_000;
 
+    /// <remarks>
+    /// This is deliberately the weaker of the two reproducibility tests: the
+    /// step is a pure function of state and frame index over a world with no
+    /// mutable state, so identical results are close to true by construction.
+    /// What it genuinely proves is that neither the simulator nor the motor
+    /// holds hidden per-instance state across ten thousand frames — which a
+    /// cached buffer or a memoized contact would break. The restore-and-replay
+    /// test below is the one that proves reconciliation is safe.
+    /// </remarks>
     [Fact]
     public void TenThousandFramesOverTheCourseAreBitIdenticalOnASecondRun()
     {
@@ -46,10 +55,20 @@ public sealed class ExplicitMotorGoldenTraceTests
 
         for (var restoreAt = 0; restoreAt < frames; restoreAt += 100)
         {
-            var replayed = ReplayFrom(history[restoreAt], restoreAt, frames);
-            Assert.True(
-                expected.Equals(replayed),
-                $"Replay from frame {restoreAt} diverged from the direct run.");
+            // Compared per frame, not just at the end. A divergence that appears
+            // mid-trace and re-converges by the last frame is still a divergence:
+            // the player saw it, and reconciliation would have corrected for it.
+            var fixture = new Fixture();
+            var replayed = history[restoreAt];
+            for (var index = restoreAt; index < frames; index++)
+            {
+                replayed = fixture.Step(replayed, index).State;
+                Assert.True(
+                    history[index + 1].Equals(replayed),
+                    $"Replay from frame {restoreAt} diverged at frame {index + 1}.");
+            }
+
+            Assert.True(expected.Equals(replayed));
         }
     }
 
@@ -67,6 +86,18 @@ public sealed class ExplicitMotorGoldenTraceTests
             Assert.True(
                 baseline.Equals(ReplayFrom(history[200], 200, frames)),
                 $"Replay attempt {attempt} differed from the first.");
+        }
+
+        // And the repeated replay matches the original trace frame by frame,
+        // not merely itself.
+        var fixture = new Fixture();
+        var stepped = history[200];
+        for (var index = 200; index < frames; index++)
+        {
+            stepped = fixture.Step(stepped, index).State;
+            Assert.True(
+                history[index + 1].Equals(stepped),
+                $"Repeated replay diverged from the original at frame {index + 1}.");
         }
     }
 

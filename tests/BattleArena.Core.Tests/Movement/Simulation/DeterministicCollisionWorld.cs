@@ -98,7 +98,7 @@ public sealed class DeterministicCollisionWorld : ICharacterCollisionWorld
                     fraction,
                     0d,
                     new SupportIdentity(body.ColliderId, body.ShapeIndex),
-                    CollisionContactState.ClassifySurface(normal, WalkableSlopeRadians));
+                    CollisionContactState.ClassifySurface(normal, request.WalkableSlopeRadians));
                 count++;
             }
 

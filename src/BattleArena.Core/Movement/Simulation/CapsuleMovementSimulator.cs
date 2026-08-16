@@ -48,12 +48,26 @@ public readonly record struct CapsuleMotorPolicy
     /// </summary>
     public double SurfaceSkin { get; init; }
 
+    /// <summary>
+    /// Overlap at or below this is left alone.
+    /// </summary>
+    /// <remarks>
+    /// A resting capsule legitimately reports contact-margin-scale overlap — the
+    /// engine's query margin defaults to a millimetre. Recovering that every
+    /// frame would push the character up and ground snap would pull it back
+    /// down, a per-frame cycle that no unit test sees because the deterministic
+    /// world uses exact geometry, and that a player would feel as jitter.
+    /// </remarks>
+    public double IgnoredPenetrationDepth { get; init; }
+
     public bool IsValid =>
         double.IsFinite(WalkableSlopeRadians) &&
             WalkableSlopeRadians is > 0d and <= Math.PI / 2d &&
         double.IsFinite(MaximumStepHeight) && MaximumStepHeight >= 0d &&
         double.IsFinite(GroundSnapDistance) && GroundSnapDistance >= 0d &&
         double.IsFinite(MaximumRecoverablePenetration) && MaximumRecoverablePenetration > 0d &&
+        double.IsFinite(IgnoredPenetrationDepth) && IgnoredPenetrationDepth >= 0d &&
+        IgnoredPenetrationDepth < MaximumRecoverablePenetration &&
         MaximumSlideIterations > 0 &&
         double.IsFinite(SurfaceSkin) && SurfaceSkin >= 0d;
 
@@ -68,6 +82,7 @@ public readonly record struct CapsuleMotorPolicy
         MaximumStepHeight = 0.4d,
         GroundSnapDistance = 0.3d,
         MaximumRecoverablePenetration = 0.25d,
+        IgnoredPenetrationDepth = 0.002d,
         MaximumSlideIterations = 4,
         SurfaceSkin = 1e-3d,
     };
@@ -249,10 +264,18 @@ public sealed class CapsuleMovementSimulator
 
         // Stepping is attempted only when horizontal motion was actually
         // blocked. A completed move has nothing to climb.
-        if (outcome is CapsuleMotionOutcome.Blocked or CapsuleMotionOutcome.Slid &&
+        // Includes the iteration cap: a busy corner at the foot of a staircase
+        // is exactly where stepping matters, and skipping it there would stop
+        // the climb silently.
+        if (outcome is CapsuleMotionOutcome.Blocked or CapsuleMotionOutcome.Slid or
+                CapsuleMotionOutcome.IterationCapReached &&
             horizontalMotion.LengthSquared > MovementMath.EpsilonSquared)
         {
-            var remaining = horizontalMotion - current.Position.HorizontalTo(state.Position) * -1d;
+            // Spent request motion only. Measured from the post-recovery
+            // position rather than the original, so a depenetration push or a
+            // moving-platform carry is not mistaken for motion the frame already
+            // spent.
+            var remaining = horizontalMotion - recovered.State.Position.HorizontalTo(current.Position);
             var stepped = SolveStep(current, profile.Current, remaining, profiles, policy);
             if (stepped.Outcome is CapsuleMotionOutcome.Stepped)
             {
@@ -287,7 +310,7 @@ public sealed class CapsuleMovementSimulator
     {
         var overlap = _world.ResolveOverlap(
             new ClearanceRequest(state.Position, profile, SupportIdentity.None));
-        if (!overlap.IsOverlapping)
+        if (!overlap.IsOverlapping || overlap.Depth <= policy.IgnoredPenetrationDepth)
         {
             return new CapsuleMotionResult(state, CapsuleMotionOutcome.Completed, 0, false);
         }
@@ -332,6 +355,15 @@ public sealed class CapsuleMovementSimulator
         var position = state.Position;
         var remainingHorizontal = horizontalMotion;
         var remainingVertical = verticalMotion;
+
+        // Velocity is projected onto the same planes as the motion. This is the
+        // deceleration: without it a character pressed into a wall keeps full
+        // speed forever, so turning away feels glued, a jump gets the full
+        // horizontal-speed bonus for speed it does not have, and a roll entry
+        // gated on speed succeeds from a standstill. The accepted driver got
+        // this for free by reading the body velocity back after MoveAndSlide.
+        var velocityHorizontal = state.HorizontalVelocity;
+        var velocityVertical = state.VerticalVelocity;
         var outcome = CapsuleMotionOutcome.Completed;
         var ceilingBlocked = false;
         var iterations = 0;
@@ -346,7 +378,12 @@ public sealed class CapsuleMovementSimulator
 
             var sweep = _world.Sweep(
                 new CapsuleSweepRequest(
-                    position, remainingHorizontal, remainingVertical, profile, SupportIdentity.None),
+                    position,
+                    remainingHorizontal,
+                    remainingVertical,
+                    profile,
+                    SupportIdentity.None,
+                    policy.WalkableSlopeRadians),
                 contacts);
             position = position.Offset(sweep.AchievedHorizontal, sweep.AchievedVertical);
 
@@ -364,7 +401,7 @@ public sealed class CapsuleMovementSimulator
             // The determinism rule: order by content, never by report order.
             window.Sort(default(CollisionContactState.StableComparer));
 
-            var blocking = FirstBlocking(window);
+            var blocking = FirstBlocking(window, sweep.RemainingHorizontal, sweep.RemainingVertical);
             if (blocking is not { } contact)
             {
                 // Only walkable ground was touched, which supports rather than
@@ -380,9 +417,13 @@ public sealed class CapsuleMovementSimulator
             }
 
             // Project the unspent motion onto the blocking plane so sliding is
-            // continuous rather than a stop.
+            // continuous rather than a stop, and the velocity onto the same
+            // plane so the character actually loses the speed it drove into the
+            // surface.
             var (projectedHorizontal, projectedVertical) = ProjectOntoPlane(
                 sweep.RemainingHorizontal, sweep.RemainingVertical, contact.Normal);
+            (velocityHorizontal, velocityVertical) = ProjectOntoPlane(
+                velocityHorizontal, velocityVertical, contact.Normal);
 
             var madeProgress =
                 Math.Abs(projectedHorizontal.X - sweep.RemainingHorizontal.X) > MovementMath.Epsilon ||
@@ -408,7 +449,10 @@ public sealed class CapsuleMovementSimulator
         }
 
         return new CapsuleMotionResult(
-            state.WithPosition(position), outcome, iterations, ceilingBlocked);
+            state.WithPosition(position).WithVelocity(velocityHorizontal, velocityVertical),
+            outcome,
+            iterations,
+            ceilingBlocked);
     }
 
     /// <summary>
@@ -458,8 +502,14 @@ public sealed class CapsuleMovementSimulator
                 false);
         }
 
-        var snapped = state.WithPosition(
-            state.Position.Offset(HorizontalVector.Zero, -probe.Distance));
+        // Landing removes downward velocity. Without this a character that lands
+        // carries its fall speed: harmless while the floor holds the position,
+        // but it is a canonical comparison field, and any rule that reads it —
+        // a landing roll, a ledge left mid-roll — sees a value that is not true.
+        var landedVertical = state.VerticalVelocity < 0d ? 0d : state.VerticalVelocity;
+        var snapped = state
+            .WithPosition(state.Position.Offset(HorizontalVector.Zero, -probe.Distance))
+            .WithVelocity(state.HorizontalVelocity, landedVertical);
         return new CapsuleMotionResult(
             snapped.WithGround(true, probe.Normal, probe.Support),
             CapsuleMotionOutcome.Completed,
@@ -496,7 +546,12 @@ public sealed class CapsuleMovementSimulator
         // Up.
         var up = _world.Sweep(
             new CapsuleSweepRequest(
-                state.Position, HorizontalVector.Zero, policy.MaximumStepHeight, profile, SupportIdentity.None),
+                state.Position,
+                HorizontalVector.Zero,
+                policy.MaximumStepHeight,
+                profile,
+                SupportIdentity.None,
+                policy.WalkableSlopeRadians),
             contacts);
         var raised = state.Position.Offset(HorizontalVector.Zero, up.AchievedVertical);
         if (up.AchievedVertical <= MovementMath.Epsilon)
@@ -506,7 +561,8 @@ public sealed class CapsuleMovementSimulator
 
         // Forward.
         var forward = _world.Sweep(
-            new CapsuleSweepRequest(raised, blockedMotion, 0d, profile, SupportIdentity.None),
+            new CapsuleSweepRequest(
+                raised, blockedMotion, 0d, profile, SupportIdentity.None, policy.WalkableSlopeRadians),
             contacts);
         var advanced = raised.Offset(forward.AchievedHorizontal, 0d);
         var progress = forward.AchievedHorizontal.Length;
@@ -517,9 +573,11 @@ public sealed class CapsuleMovementSimulator
             return new CapsuleMotionResult(state, CapsuleMotionOutcome.Blocked, 0, false);
         }
 
-        // Down, at most as far as we rose.
+        // Down, at most as far as we actually rose. Probing the full step height
+        // when headroom cut the lift short would let the solver descend further
+        // than it climbed.
         var down = _world.ProbeGround(
-            new GroundProbeRequest(advanced, policy.MaximumStepHeight, profile));
+            new GroundProbeRequest(advanced, up.AchievedVertical, profile));
         if (!down.FoundGround)
         {
             return new CapsuleMotionResult(state, CapsuleMotionOutcome.Blocked, 0, false);
@@ -560,13 +618,36 @@ public sealed class CapsuleMovementSimulator
             _world.HasClearance(new ClearanceRequest(state.Position, to, SupportIdentity.None));
     }
 
-    private static CollisionContactState? FirstBlocking(ReadOnlySpan<CollisionContactState> ordered)
+    /// <summary>
+    /// The first contact, in stable order, that both blocks and actually opposes
+    /// the remaining motion.
+    /// </summary>
+    /// <remarks>
+    /// The opposition test matters because a query can report contacts at the
+    /// resting pose whose normals the motion is travelling away from. Taking the
+    /// first blocking contact regardless would project against a plane that is
+    /// not in the way, make no progress, and abandon the rest of the frame's
+    /// motion as blocked.
+    /// </remarks>
+    private static CollisionContactState? FirstBlocking(
+        ReadOnlySpan<CollisionContactState> ordered,
+        HorizontalVector remainingHorizontal,
+        double remainingVertical)
     {
         for (var index = 0; index < ordered.Length; index++)
         {
-            if (ordered[index].IsBlocking)
+            ref readonly var candidate = ref ordered[index];
+            if (!candidate.IsBlocking)
             {
-                return ordered[index];
+                continue;
+            }
+
+            var into = (remainingHorizontal.X * candidate.Normal.X) +
+                (remainingVertical * candidate.Normal.Y) +
+                (remainingHorizontal.Z * candidate.Normal.Z);
+            if (into < 0d)
+            {
+                return candidate;
             }
         }
 

@@ -106,7 +106,7 @@ public sealed partial class GodotKinematicCollisionWorld : Node3D, ICharacterCol
                     ClampFraction(travel, motion),
                     Math.Max(0d, _result.GetCollisionDepth(index)),
                     new SupportIdentity(colliderRid.Id, _result.GetColliderShape(index)),
-                    CollisionContactState.ClassifySurface(normal, _walkableSlopeRadians));
+                    CollisionContactState.ClassifySurface(normal, request.WalkableSlopeRadians));
             }
         }
 
@@ -213,11 +213,6 @@ public sealed partial class GodotKinematicCollisionWorld : Node3D, ICharacterCol
 
     private const int MaximumReportedCollisions = 8;
     private const float OverlapProbeMotion = 0.0001f;
-    private double _walkableSlopeRadians = Math.PI / 4d;
-
-    /// <summary>The walkable threshold contacts are classified against.</summary>
-    public void SetWalkableSlope(double radians) => _walkableSlopeRadians = radians;
-
     private ProfileBody RequireProfile(CollisionProfileKind kind)
     {
         if (!_initialized)
