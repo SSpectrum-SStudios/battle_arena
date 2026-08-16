@@ -20,7 +20,23 @@ public readonly record struct CapsuleSweepRequest
         HorizontalVector horizontalMotion,
         double verticalMotion,
         CollisionProfileKind profile,
-        SupportIdentity excludedCollider) => throw new NotImplementedException();
+        SupportIdentity excludedCollider)
+    {
+        if (!origin.IsFinite || !horizontalMotion.IsFinite || !double.IsFinite(verticalMotion))
+        {
+            throw new ArgumentOutOfRangeException(nameof(origin));
+        }
+        if (!Enum.IsDefined(profile))
+        {
+            throw new ArgumentOutOfRangeException(nameof(profile));
+        }
+
+        Origin = origin;
+        HorizontalMotion = horizontalMotion;
+        VerticalMotion = verticalMotion;
+        Profile = profile;
+        ExcludedCollider = excludedCollider;
+    }
 
     public WorldPosition Origin { get; }
     public HorizontalVector HorizontalMotion { get; }
@@ -32,7 +48,12 @@ public readonly record struct CapsuleSweepRequest
     /// step solver's deliberate re-query against a surface it just left.
     /// </summary>
     public SupportIdentity ExcludedCollider { get; }
-    public bool IsValid => throw new NotImplementedException();
+
+    public bool IsValid =>
+        Origin.IsFinite &&
+        HorizontalMotion.IsFinite &&
+        double.IsFinite(VerticalMotion) &&
+        Enum.IsDefined(Profile);
 }
 
 /// <summary>
@@ -43,7 +64,25 @@ public readonly record struct GroundProbeRequest
     public GroundProbeRequest(
         WorldPosition origin,
         double maximumDistance,
-        CollisionProfileKind profile) => throw new NotImplementedException();
+        CollisionProfileKind profile)
+    {
+        if (!origin.IsFinite)
+        {
+            throw new ArgumentOutOfRangeException(nameof(origin));
+        }
+        if (!double.IsFinite(maximumDistance) || maximumDistance < 0d)
+        {
+            throw new ArgumentOutOfRangeException(nameof(maximumDistance));
+        }
+        if (!Enum.IsDefined(profile))
+        {
+            throw new ArgumentOutOfRangeException(nameof(profile));
+        }
+
+        Origin = origin;
+        MaximumDistance = maximumDistance;
+        Profile = profile;
+    }
 
     public WorldPosition Origin { get; }
 
@@ -53,7 +92,11 @@ public readonly record struct GroundProbeRequest
     /// </summary>
     public double MaximumDistance { get; }
     public CollisionProfileKind Profile { get; }
-    public bool IsValid => throw new NotImplementedException();
+
+    public bool IsValid =>
+        Origin.IsFinite &&
+        double.IsFinite(MaximumDistance) && MaximumDistance >= 0d &&
+        Enum.IsDefined(Profile);
 }
 
 /// <summary>
@@ -69,12 +112,26 @@ public readonly record struct ClearanceRequest
     public ClearanceRequest(
         WorldPosition origin,
         CollisionProfileKind profile,
-        SupportIdentity excludedCollider) => throw new NotImplementedException();
+        SupportIdentity excludedCollider)
+    {
+        if (!origin.IsFinite)
+        {
+            throw new ArgumentOutOfRangeException(nameof(origin));
+        }
+        if (!Enum.IsDefined(profile))
+        {
+            throw new ArgumentOutOfRangeException(nameof(profile));
+        }
+
+        Origin = origin;
+        Profile = profile;
+        ExcludedCollider = excludedCollider;
+    }
 
     public WorldPosition Origin { get; }
     public CollisionProfileKind Profile { get; }
     public SupportIdentity ExcludedCollider { get; }
-    public bool IsValid => throw new NotImplementedException();
+    public bool IsValid => Origin.IsFinite && Enum.IsDefined(Profile);
 }
 
 /// <summary>
@@ -94,7 +151,24 @@ public readonly record struct CapsuleSweepResult
         double achievedVertical,
         HorizontalVector remainingHorizontal,
         double remainingVertical,
-        int contactCount) => throw new NotImplementedException();
+        int contactCount)
+    {
+        if (!achievedHorizontal.IsFinite || !double.IsFinite(achievedVertical) ||
+            !remainingHorizontal.IsFinite || !double.IsFinite(remainingVertical))
+        {
+            throw new ArgumentOutOfRangeException(nameof(achievedHorizontal));
+        }
+        if (contactCount < 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(contactCount));
+        }
+
+        AchievedHorizontal = achievedHorizontal;
+        AchievedVertical = achievedVertical;
+        RemainingHorizontal = remainingHorizontal;
+        RemainingVertical = remainingVertical;
+        ContactCount = contactCount;
+    }
 
     /// <summary>
     /// Motion actually achieved, as a vector rather than a fraction of the
@@ -115,8 +189,10 @@ public readonly record struct CapsuleSweepResult
     public double RemainingVertical { get; }
 
     public int ContactCount { get; }
-    public bool HasContact => throw new NotImplementedException();
-    public static CapsuleSweepResult Clear => throw new NotImplementedException();
+    public bool HasContact => ContactCount > 0;
+
+    public static CapsuleSweepResult Clear =>
+        new(HorizontalVector.Zero, 0d, HorizontalVector.Zero, 0d, 0);
 }
 
 /// <summary>
@@ -135,7 +211,22 @@ public readonly record struct OverlapResolution
         bool isOverlapping,
         HorizontalVector separationHorizontal,
         double separationVertical,
-        double depth) => throw new NotImplementedException();
+        double depth)
+    {
+        if (!separationHorizontal.IsFinite || !double.IsFinite(separationVertical))
+        {
+            throw new ArgumentOutOfRangeException(nameof(separationHorizontal));
+        }
+        if (!double.IsFinite(depth) || depth < 0d)
+        {
+            throw new ArgumentOutOfRangeException(nameof(depth));
+        }
+
+        IsOverlapping = isOverlapping;
+        SeparationHorizontal = separationHorizontal;
+        SeparationVertical = separationVertical;
+        Depth = depth;
+    }
 
     public bool IsOverlapping { get; }
 
@@ -149,7 +240,9 @@ public readonly record struct OverlapResolution
     /// character belongs on.
     /// </summary>
     public double Depth { get; }
-    public static OverlapResolution None => throw new NotImplementedException();
+
+    public static OverlapResolution None =>
+        new(false, HorizontalVector.Zero, 0d, 0d);
 }
 
 /// <summary>The result of a ground probe.</summary>
@@ -159,7 +252,18 @@ public readonly record struct GroundProbeResult
         bool foundGround,
         double distance,
         SurfaceNormal normal,
-        SupportIdentity support) => throw new NotImplementedException();
+        SupportIdentity support)
+    {
+        if (!double.IsFinite(distance) || distance < 0d)
+        {
+            throw new ArgumentOutOfRangeException(nameof(distance));
+        }
+
+        FoundGround = foundGround;
+        Distance = distance;
+        Normal = foundGround && normal.IsValid ? normal : SurfaceNormal.Up;
+        Support = foundGround ? support : SupportIdentity.None;
+    }
 
     public bool FoundGround { get; }
 
@@ -167,7 +271,9 @@ public readonly record struct GroundProbeResult
     public double Distance { get; }
     public SurfaceNormal Normal { get; }
     public SupportIdentity Support { get; }
-    public static GroundProbeResult None => throw new NotImplementedException();
+
+    public static GroundProbeResult None =>
+        new(false, 0d, SurfaceNormal.Up, SupportIdentity.None);
 }
 
 /// <summary>

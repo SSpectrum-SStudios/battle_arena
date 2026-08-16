@@ -1298,7 +1298,7 @@ be met by a static-only world and belongs with Phase 9 frame-aligned collision.
     is omitted and authority-only hit/damage state cannot be stored.
 
 - [ ] **P05-05 — Define query-neutral collision contracts.**
-  - Status: **Stubs Reviewed**.
+  - Status: **Implemented**.
   - Purpose: Isolate sweep, ground probe, clearance, and support motion from Godot
     nodes and presentation.
   - Target files: `ICharacterCollisionWorld.cs`,
@@ -1315,7 +1315,7 @@ be met by a static-only world and belongs with Phase 9 frame-aligned collision.
     reusable results, and same-frame query/commit behavior.
 
 - [ ] **P05-07 — Implement bounded sweep and penetration recovery.**
-  - Status: **Stubs Reviewed**.
+  - Status: **Implemented**.
   - Purpose: Resolve desired capsule travel and recover legal shallow overlap from
     explicit state.
   - Target files: `CapsuleMovementSimulator.cs`,
@@ -1324,7 +1324,7 @@ be met by a static-only world and belongs with Phase 9 frame-aligned collision.
     iterations, and unrecoverable penetration pass.
 
 - [ ] **P05-08 — Implement stable slide resolution.**
-  - Status: **Stubs Reviewed**.
+  - Status: **Implemented**.
   - Purpose: Resolve multiple contacts in stable fraction/collider/shape/normal
     order without node iteration dependence.
   - Target files: `CapsuleMovementSimulator.cs`,
@@ -1333,7 +1333,7 @@ be met by a static-only world and belongs with Phase 9 frame-aligned collision.
     and iteration-cap traces pass.
 
 - [ ] **P05-09 — Implement slope classification and ground snap.**
-  - Status: **Stubs Reviewed**.
+  - Status: **Implemented**.
   - Purpose: Reproduce walkable/unwalkable slopes, explicit ground probing, and
     no snap while rising.
   - Target files: `CapsuleMovementSimulator.cs`,
@@ -1342,7 +1342,7 @@ be met by a static-only world and belongs with Phase 9 frame-aligned collision.
     and normal tolerance tests pass.
 
 - [ ] **P05-10 — Implement explicit stair/step solving.**
-  - Status: **Stubs Reviewed**.
+  - Status: **Implemented**.
   - Purpose: Generalize up-forward-down stepping for direct and strafing entry
     without changing the map to hide lips.
   - Target files: `CapsuleMovementSimulator.cs`,
@@ -1351,7 +1351,7 @@ be met by a static-only world and belongs with Phase 9 frame-aligned collision.
     headroom, and no-progress rejection pass.
 
 - [ ] **P05-11 — Implement ceiling and profile-clearance rules.**
-  - Status: **Stubs Reviewed**.
+  - Status: **Implemented**.
   - Purpose: Stop upward motion on ceilings and allow profile expansion only when
     static/player clearance permits it.
   - Target files: `CapsuleMovementSimulator.cs`,

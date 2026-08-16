@@ -5,4 +5,11 @@
     <Nullable>enable</Nullable>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
   </PropertyGroup>
+  <ItemGroup>
+    <!-- The motor's individual stages are internal so callers must go through
+         Move, which fixes the stage ordering. Tests still need to exercise each
+         stage in isolation. -->
+    <InternalsVisibleTo Include="BattleArena.Core.Tests" />
+  </ItemGroup>
+
 </Project>
