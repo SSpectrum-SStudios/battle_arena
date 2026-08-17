@@ -2438,6 +2438,34 @@ forced when it is a decision.
   - Verification: both suites green with no order-dependent allocation failures,
     on repeated cold runs.
 
+- [ ] **P06-A6 — Configure Steam lanes, and make Steam the authority transport.**
+  - Status: **Planned. Two gaps found by asking which transport is actually the
+    target.**
+  - **Steam is the shipping target; ENet is the local test harness.** The
+    verification so far has been the wrong way round — the harness is the one with
+    correct head-of-line isolation, and the real target is the one missing it.
+  - Gap 1: **lanes are not configured on the Steam connection.**
+    `ISteamNetworkingSockets` provides lanes for exactly this — Valve describes them
+    as equivalent to QUIC streams or other APIs' channels, with head-of-line
+    blocking control and bandwidth sharing, and guarantees ordering only *within* a
+    lane. `GodotEnetTransport` already does the equivalent through
+    `TransportChannels` and `TransferChannel`; `GodotSteamPredictionMeshTransport`
+    sends everything on the default lane, so a reliable control retransmit can delay
+    unreliable movement packets on the target platform and not in testing.
+  - Gap 2: **the authority path is ENet-only.** `NetworkLauncher` holds an
+    `_enetTransport` for authority and a `_steamPredictionTransport` for the
+    prediction mesh only. For a Steam title the authority path should also run over
+    Steam Networking Sockets, which additionally buys NAT traversal, relay routing
+    and DDoS protection that raw ENet does not.
+  - Note this makes the deleted `DeterministicReliableChannelModel` look even more
+    clearly right to delete: it modelled reliable-ordered delivery and head-of-line
+    blocking in software, for a target platform that provides both natively and
+    whose native mechanism we had not wired up.
+  - Verification: lanes configured with movement and control separated, and a
+    headless or instrumented check that a reliable backlog does not delay unreliable
+    movement; the authority transport runs over Steam with ENet retained as the
+    local harness.
+
 #### The lens this revision came from
 
 Phase 1 was titled "Evidence, Impairment, and Feasibility" and produced evidence by
