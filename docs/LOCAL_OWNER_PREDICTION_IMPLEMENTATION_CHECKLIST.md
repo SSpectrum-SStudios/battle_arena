@@ -1458,19 +1458,7 @@ One blocker, six majors. The blocker was the one that changed how the game feels
     and every replay pivot pass with zero unexplained divergence.
 
 
-- [ ] **P05-18 — Store contact facts in the rewind unit.**
-  - Purpose: P05-01 promised "stable contact facts in replayable value state",
-    and `CollisionContactState` exists only as scratch inside the motor.
-    Contacts are derivable, so this is not a determinism break — but P06-01
-    stores contacts in history, P06-03 classifies contact replay, and P06-04
-    keys a correction reason on them, so all three would otherwise reopen the
-    rewind unit, which is a protocol change.
-  - Target files: `CharacterSimulationState.cs`, `CharacterMovementSimulator.cs`,
-    `CharacterSimulationStateTests.cs`.
-  - Verification: Contacts survive restore/replay identically and the bounded
-    storage allocates nothing per frame.
-
-- [ ] **P05-19 — Supply attack movement influence to the explicit motor.**
+- [ ] **P05-18 — Supply attack movement influence to the explicit motor.**
   - Purpose: `CharacterMovementSimulator.InfluenceFor` returns null
     unconditionally. The plumbing is complete — `CharacterActionState` carries
     the step index through restore — but the authored policy mapping a step to
@@ -1561,8 +1549,78 @@ difference — never by a hash alone, never by a tolerance the comparer cannot
 name a field for, and never by smoothing collision truth. An unnecessary
 correction is a visible snap the player did nothing to deserve.
 
+
+### Stub review outcome (one critic over the merged unit)
+
+Four blockers and fifteen majors. The largest was that this unit re-invented a
+taxonomy Phase 1 already shipped.
+
+- **`OwnerCorrectionAction` and `OwnerRebaseReason` duplicated and contradicted
+  P01-02.** `OwnerCorrectionAction` was a value-for-value copy of
+  `OwnerCorrectionDisposition`, and `OwnerRebaseReason.EpochChanged` collapsed
+  the four lifecycle causes that P01-02 deliberately keeps separate — a
+  separation a critic specifically required before approving that item. It also
+  invented `AuthorityDemanded`, which `OwnerCorrectionTelemetry.Classify` would
+  throw on, while omitting `ConfigurationHistoryPolicyExhausted`, which P06-05
+  needs. Both new enums are deleted; the decision now carries the Phase 1 types.
+- **The difference reported a `string` field name** where `OwnerMismatchField`
+  already enumerates twenty-two fields. The consequence was sharp: the policy
+  could not structurally tell `ContactReplay` from `OrdinaryReplay`, which is its
+  entire job. It now carries the enum plus `OwnerCorrectionError`, which also
+  supplies the five separate magnitude axes telemetry requires — a single
+  position scalar could not express that a vertical error near a jump apex is
+  more visible than the same error in plan.
+- **P05-18 was a prerequisite scheduled nowhere.** History stores contacts and
+  the comparer compares them, but Phase 5 left contacts out of the rewind unit.
+  It is now P6-00 and runs first.
+- **Three Godot probe classes shared one file**, so two of them could not be
+  attached to a scene, and none carried the `GetTree().Quit(exitCode)` contract
+  every existing probe runner keys on. Split per repo convention.
+
+Also applied: applied transitions and simulation events move into
+`OwnerPredictedFrame` rather than being re-derived at replay time — authority can
+remap a transition to a later frame, so re-deriving is exactly how first run and
+replay come to disagree, and the events are what `PredictedCueLedger` needs to
+keep a replayed jump from firing ten sounds. `TryReplacePostState` was added
+because the corrected frame otherwise keeps the owner's wrong answer and
+mismatches again on a duplicate authority state. The policy now receives a
+difference and a motion outcome instead of the predicted frame, so it is
+physically unable to read a canonical hash — the rule the unit exists to enforce
+is structural rather than documented. The comparer takes the authority's hash so
+`DiagnosticHashOnly` is producible, and the hash takes an epoch because the
+design's field list includes identities `CharacterSimulationState` deliberately
+excludes. `OwnerPredictionWorkPolicy` bounds replay depth and queued futures
+separately from retention, because retention decides how far back a correction
+may reach and that is not the same as how much work one engine frame may do. The
+epoch gate and cue ledger are injected rather than duplicated, and the adapter
+publishes through `CharacterPresentationController` — which already refuses a
+replay pass structurally — rather than reimplementing presentation.
+
+Confirmed by the review and kept: deferring P06-08/09/12 was right, and the
+review proved it — three wire-shaping discoveries would otherwise have been
+frozen wrongly. Running 5B first is right, with `VerifyAgreesWithDeterministicWorld`
+the load-bearing case, since it converts every motor unit test against the fake
+into evidence about the real engine.
+
+- [ ] **P6-00 — Store contact facts in the rewind unit.**
+  - Status: **Stubs Reviewed**.
+  - Purpose: P05-01 promised "stable contact facts in replayable value state",
+    and `CollisionContactState` exists only as scratch inside the motor.
+    Contacts are derivable, so this is not a determinism break — but P06-01
+    stores contacts in history, P06-03 compares them, and P06-04 keys
+    `ContactReplay` on them, so all three would otherwise reopen the rewind
+    unit, which is a protocol change.
+  - Target files: `CharacterSimulationState.cs`, `CharacterMovementSimulator.cs`,
+    `CharacterSimulationStateTests.cs`.
+  - Verification: Contacts survive restore/replay identically and the bounded
+    storage allocates nothing per frame.
+  - Note: moved here from Phase 5, where the stub review found it scheduled
+    nowhere despite the plan naming it a prerequisite of P06-01. It runs before
+    P06-01 rather than after 5B, because it changes the rewind unit and 5B's
+    probes measure the motor against it.
+
 - [ ] **P5B-01 — Verify the Godot collision adapter in-engine.**
-  - Status: **Stubbed**.
+  - Status: **Stubs Reviewed**.
   - Purpose: `GodotKinematicCollisionWorld` has no test and no probe. P01-09
     proved the query *approach* but exercised a different class, and the adapter
     added a path the probe deliberately never ran: `ResolveOverlap` uses
@@ -1581,7 +1639,7 @@ correction is a visible snap the player did nothing to deserve.
     against the deterministic world and the offline arena.
 
 - [ ] **P5B-02 — Prove the explicit motor matches the legacy motor in the arena.**
-  - Status: **Stubbed**.
+  - Status: **Stubs Reviewed**.
   - Purpose: P05-16 supplies the switch but nothing compares the two motors.
     Both read the same authored `movement.json`, so a scripted input trace run
     through each should produce closely matching motion — and where it does not,
@@ -1596,7 +1654,7 @@ correction is a visible snap the player did nothing to deserve.
     and field rather than averaged away.
 
 - [ ] **P5B-03 — Measure the explicit motor's real per-frame query cost.**
-  - Status: **Stubbed**.
+  - Status: **Stubs Reviewed**.
   - Purpose: P01-11 measured the *probe's* query cost, not the motor's. The
     motor issues several queries per frame — recovery, sweep, per-slide-iteration
     re-sweep, ground probe, and up to three more for a step — so the real budget
@@ -1609,7 +1667,7 @@ correction is a visible snap the player did nothing to deserve.
 ## Phase 6 — Owner History and Exact Reconciliation
 
 - [ ] **P06-01 — Implement the bounded owner prediction history.**
-  - Status: **Stubbed**.
+  - Status: **Stubs Reviewed**.
   - Purpose: Store complete pre/post state, command, revisions, contacts, events,
     and diagnostics in a preallocated frame-indexed ring.
   - Target files: `OwnerPredictionHistory.cs`,
@@ -1618,7 +1676,7 @@ correction is a visible snap the player did nothing to deserve.
     tests pass.
 
 - [ ] **P06-02 — Implement canonical diagnostic state hashing.**
-  - Status: **Stubbed**.
+  - Status: **Stubs Reviewed**.
   - Purpose: Produce versioned XxHash64 diagnostics from explicitly ordered,
     quantized fields rather than raw floats or Protobuf bytes.
   - Target files: `CanonicalMovementStateHash.cs`,
@@ -1627,7 +1685,7 @@ correction is a visible snap the player did nothing to deserve.
     seam tolerance, and schema-version tests pass.
 
 - [ ] **P06-03 — Implement tolerant owner state comparison.**
-  - Status: **Stubbed**.
+  - Status: **Stubs Reviewed**.
   - Purpose: Separate exact gameplay-discrete mismatches from numeric tolerance
     and diagnostic-only manifold differences.
   - Target files: `OwnerReconciliationComparer.cs`,
@@ -1636,7 +1694,7 @@ correction is a visible snap the player did nothing to deserve.
     support/profile/action mismatch, and first-field diagnostics pass.
 
 - [ ] **P06-04 — Implement correction classification policy.**
-  - Status: **Stubbed**.
+  - Status: **Stubs Reviewed**.
   - Purpose: Choose confirmed, ordinary replay, contact replay, or hard local
     rebase without smoothing collision truth.
   - Target files: `OwnerReconciliationPolicy.cs`,
@@ -1645,7 +1703,7 @@ correction is a visible snap the player did nothing to deserve.
     triggers correction.
 
 - [ ] **P06-05 — Integrate tick-effective movement configuration lookup.**
-  - Status: **Stubbed**.
+  - Status: **Stubs Reviewed**.
   - Purpose: Resolve the canonical revision for every first-run/replay frame and
     queue baselines when definitions are briefly missing.
   - Target files: `MovementConfigurationTimeline.cs`,
@@ -1654,7 +1712,7 @@ correction is a visible snap the player did nothing to deserve.
     rejected merely for a client's stale claimed revision.
 
 - [ ] **P06-06 — Implement static-world local reconciliation.**
-  - Status: **Stubbed**.
+  - Status: **Stubs Reviewed**.
   - Purpose: Restore the exact authority frame and replay later owner commands
     through simulation only.
   - Target files: `LocalMovementPredictionController.cs`,
@@ -1663,7 +1721,7 @@ correction is a visible snap the player did nothing to deserve.
     correct frames and converge.
 
 - [ ] **P06-07 — Implement queued-future and hard-rebase handling.**
-  - Status: **Stubbed**.
+  - Status: **Stubs Reviewed**.
   - Purpose: Queue authority frames ahead of local simulation and perform one
     clean local rebase for missing history/epoch/penetration failures.
   - Target files: `LocalMovementPredictionController.cs`,
@@ -1672,7 +1730,7 @@ correction is a visible snap the player did nothing to deserve.
     has one enumerated reason and clears bounded state atomically.
 
 - [ ] **P06-08 — Finalize the owner-baseline Protobuf state.**
-  - Status: **Stubbed**.
+  - Status: **Stubs Reviewed**.
   - Purpose: Encode the proven Phase 5 state, ACKs, journals, lead policy, and hash
     schema without authority-only hit/damage fields.
   - Target files: `authority_state.proto`, `ProtobufProtocolCodecTests.cs`,
@@ -1681,7 +1739,7 @@ correction is a visible snap the player did nothing to deserve.
     gates pass.
 
 - [ ] **P06-09 — Finalize the compact collision-world Protobuf state.**
-  - Status: **Stubbed**.
+  - Status: **Stubs Reviewed**.
   - Purpose: Encode self-contained quantized frame state, bounded contacts/sources,
     and deterministic partition identity.
   - Target files: `authority_state.proto`,
@@ -1690,7 +1748,7 @@ correction is a visible snap the player did nothing to deserve.
     supersession, and byte ceilings pass.
 
 - [ ] **P06-10 — Add commit-once Godot owner adapter.**
-  - Status: **Stubbed**.
+  - Status: **Stubs Reviewed**.
   - Purpose: Reconcile/replay in value state, then commit one final collision pose
     and publish one presentation sample per real frame.
   - Target files: `GodotOwnerPredictionAdapter.cs`, `NetworkAvatar.cs`,
@@ -1699,7 +1757,7 @@ correction is a visible snap the player did nothing to deserve.
     sample, and zero historical node/cue operations.
 
 - [ ] **P06-11 — Integrate static-only V2 owner prediction.**
-  - Status: **Stubbed**.
+  - Status: **Stubs Reviewed**.
   - Purpose: Exercise exact history/reconciliation in the arena while explicitly
     disabling/softening predicted player collision until Phase 9.
   - Target files: `NetworkArena.cs`, `NetworkAvatar.cs`,
@@ -1708,7 +1766,7 @@ correction is a visible snap the player did nothing to deserve.
     local input latency unchanged; V2 cannot become alpha default.
 
 - [ ] **P06-12 — Add separate-process canonical trace parity.**
-  - Status: **Stubbed**.
+  - Status: **Stubs Reviewed**.
   - Purpose: Compare authority and owner per-frame state/first divergence across
     independent Godot processes.
   - Target files: `verify_owner_prediction_trace.ps1`, `NetworkArena.cs`,

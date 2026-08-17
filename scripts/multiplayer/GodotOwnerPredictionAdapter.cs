@@ -1,6 +1,7 @@
 using BattleArena.Core.Common;
 using BattleArena.Core.Movement.Simulation;
 using BattleArena.Multiplayer.OwnerPrediction;
+using BattleArena.Multiplayer.Presentation;
 using Godot;
 
 namespace BattleArena.GodotNetworking;
@@ -12,47 +13,65 @@ namespace BattleArena.GodotNetworking;
 /// <remarks>
 /// <para>
 /// This is the boundary that makes replay invisible. A correction may resimulate
-/// thirty frames, and every one of those frames produces a state — but the
-/// player must see one pose, hear one set of cues, and observe one camera
-/// update, all describing the final frame. Committing per replayed frame would
-/// turn every correction into a visible stutter and an audible burst
-/// proportional to how far back it reached.
+/// thirty frames, and every one of those produces a state — but the player must
+/// see one pose, hear one set of cues, and observe one camera update, all
+/// describing the final frame. Committing per replayed frame would turn every
+/// correction into a visible stutter and an audible burst proportional to how
+/// far back it reached.
 /// </para>
 /// <para>
-/// Phase 2 already established this rule for the legacy path: historical replay
-/// runs state-only inside a frame transaction and a single outer authorization
-/// publishes afterwards. This is the same rule for the V2 path, and it is the
-/// only place V2 is allowed to touch a node at all.
+/// The commit-once property is already structural rather than enforced here:
+/// <see cref="LocalMovementPredictionController"/> holds no reference to this
+/// adapter, so replay physically cannot commit. The counters below exist to
+/// prove that in a gate, not to create the guarantee.
 /// </para>
 /// <para>
-/// The adapter also decides how a correction is presented, which is not the same
-/// as whether it is applied. An ordinary replay may be smoothed toward its
-/// result; a contact replay and a hard rebase may not, because both mean the
-/// simulation disagreed about collision or the timeline, and smoothing those
-/// would render the character somewhere the world says it cannot be.
+/// Presentation goes through <see cref="CharacterPresentationController"/>
+/// rather than being reimplemented: that type already refuses a
+/// historical-replay pass structurally, and Phase 7 builds correction-debt
+/// smoothing on it. Body writes go through the avatar's fixed-physics commit
+/// guard for the same reason — Phase 2 established that gameplay blocking bodies
+/// are written only at physics boundaries, and V2 does not get an exception.
+/// </para>
+/// <para>
+/// Cue deduplication is <see cref="PredictedCueLedger"/>'s job. Replay offers it
+/// the same event identities the first run did, so a jump that was predicted,
+/// replayed nine times, and then confirmed still fires one sound.
 /// </para>
 /// </remarks>
 public sealed partial class GodotOwnerPredictionAdapter : Node
 {
     /// <summary>
-    /// Binds the adapter to the avatar it commits to.
+    /// Binds the adapter to the avatar it commits to and the presentation and cue
+    /// seams it publishes through.
     /// </summary>
-    public void Bind(NetworkAvatar avatar) => throw new NotImplementedException();
+    public void Bind(
+        NetworkAvatar avatar,
+        CharacterPresentationController presentation,
+        PredictedCueLedger cueLedger) => throw new NotImplementedException();
 
     /// <summary>
-    /// Commits one reconciled frame: one collision pose, one presentation sample.
+    /// Opens one engine frame, resetting the per-frame commit counters.
+    /// </summary>
+    /// <remarks>
+    /// The gate asserts exactly one body commit and one presentation sample
+    /// <em>per engine frame</em>, which a monotone lifetime counter cannot
+    /// express. This is the frame boundary those counts are measured against.
+    /// </remarks>
+    public void BeginEngineFrame(SimulationInstant frame) => throw new NotImplementedException();
+
+    /// <summary>
+    /// Commits one reconciled frame: one collision pose, one presentation sample,
+    /// and any cues the ledger has not already retired.
     /// </summary>
     /// <param name="result">
     /// What reconciliation did this frame, so presentation can distinguish an
     /// ordinary correction from one it must not smooth.
     /// </param>
-    /// <remarks>
-    /// Called once per engine frame regardless of how many simulation frames were
-    /// replayed to produce <paramref name="state"/>.
-    /// </remarks>
     public void CommitFrame(
         in CharacterSimulationState state,
-        in OwnerReconciliationResult result) => throw new NotImplementedException();
+        in OwnerReconciliationResult result,
+        double deltaSeconds) => throw new NotImplementedException();
 
     /// <summary>
     /// Whether a correction of this kind may be visually smoothed.
@@ -66,14 +85,13 @@ public sealed partial class GodotOwnerPredictionAdapter : Node
     public static bool MaySmooth(in OwnerReconciliationResult result) =>
         throw new NotImplementedException();
 
-    /// <summary>
-    /// Number of body commits performed. Diagnostics for the replay gate, which
-    /// asserts this is exactly one per engine frame regardless of replay depth.
-    /// </summary>
-    public long BodyCommitCount => throw new NotImplementedException();
+    /// <summary>Body commits performed in the current engine frame. Must be one.</summary>
+    public int BodyCommitsThisFrame => throw new NotImplementedException();
 
-    /// <summary>
-    /// Number of presentation samples published, asserted the same way.
-    /// </summary>
-    public long PresentationSampleCount => throw new NotImplementedException();
+    /// <summary>Presentation samples published in the current engine frame. Must be one.</summary>
+    public int PresentationSamplesThisFrame => throw new NotImplementedException();
+
+    /// <summary>Lifetime totals, for the soak gates.</summary>
+    public long TotalBodyCommits => throw new NotImplementedException();
+    public long TotalPresentationSamples => throw new NotImplementedException();
 }
