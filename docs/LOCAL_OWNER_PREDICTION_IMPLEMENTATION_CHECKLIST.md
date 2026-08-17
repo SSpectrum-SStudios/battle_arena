@@ -2188,8 +2188,28 @@ shape queries at explicit historical transforms for hit validation (Phase 8), an
     with ball contact approximated as a force at a single point. Shipping
     simplification, not geometric exactness.
 
-- [ ] **P06-A1b — Stable cross-process collider identity, inside the existing adapter.**
-  - Status: **Planned.**
+- [x] **P06-A1b — Stable cross-process collider identity, inside the existing adapter.**
+  - Status: **Implemented.** ~120 lines, where the withdrawn P06-A1 would have been
+    a subsystem.
+  - `SceneColliderIdentity` (Core, engine-free) derives a `SupportIdentity` from the
+    owning body's authored path plus a shape ordinal. The adapter resolves
+    `GetColliderId()` to its node once per collider and caches the path, because
+    `InstanceFromId` plus `GetPath` is far too expensive for a query issued several
+    times per frame and multiplied again by replay depth.
+  - Hashing is a hand-written FNV-1a over UTF-8 bytes rather than
+    `string.GetHashCode`, because .NET randomises string hashing per process by
+    default — which would have produced a process-local identity that looked stable
+    and passed every single-process test. That is the same trap the RID fell into.
+  - An unresolvable collider yields `SupportIdentity.None` rather than a fabricated
+    value: an invalid support reads as "standing on nothing", which is visible and
+    gets investigated, while a fabricated one compares unequal across processes and
+    produces a correction storm that looks like a network fault.
+  - **The probe case was strengthened, and this is the important part.**
+    `VerifyStableColliderIdentity` previously only re-queried the same floor in one
+    process — which a raw RID satisfies perfectly, and is exactly why this defect
+    survived four phases. It now also derives the expected identity independently
+    from the node's own authored path and compares, so it fails if the value is
+    stable for the wrong reason.
   - Purpose: what A1 was actually needed for. `SupportIdentity` is built from
     `colliderRid.Id`, a per-process physics-server allocation handle, so `Support`
     — a discrete comparison field checked before numeric ones — would mismatch on

@@ -34,6 +34,18 @@ public sealed partial class GodotKinematicCollisionWorld : Node3D, ICharacterCol
 {
     private readonly Dictionary<CollisionProfileKind, ProfileBody> _profiles = [];
     private readonly PhysicsTestMotionResult3D _result = new();
+
+    /// <summary>
+    /// Collider ObjectID to its authored scene path, resolved once per collider.
+    /// </summary>
+    /// <remarks>
+    /// Cached because <c>InstanceFromId</c> plus <c>GetPath</c> is far too expensive
+    /// for a query issued several times per frame and multiplied again by replay
+    /// depth. The set of static colliders is fixed for a level, so this fills once
+    /// and then only reads.
+    /// </remarks>
+    private readonly Dictionary<ulong, string> _colliderPaths = [];
+
     private PhysicsTestMotionParameters3D _parameters = new();
     private bool _initialized;
 
@@ -99,13 +111,12 @@ public sealed partial class GodotKinematicCollisionWorld : Node3D, ICharacterCol
             {
                 var normal = NormalFromEngine(_result.GetCollisionNormal(index));
                 var point = FromEngine(_result.GetCollisionPoint(index));
-                var colliderRid = _result.GetColliderRid(index);
                 contacts[count++] = new CollisionContactState(
                     point,
                     normal,
                     ClampFraction(travel, motion),
                     Math.Max(0d, _result.GetCollisionDepth(index)),
-                    new SupportIdentity(colliderRid.Id, _result.GetColliderShape(index)),
+                    IdentityFor(_result.GetColliderId(index), _result.GetColliderShape(index)),
                     CollisionContactState.ClassifySurface(normal, request.WalkableSlopeRadians));
             }
         }
@@ -135,7 +146,7 @@ public sealed partial class GodotKinematicCollisionWorld : Node3D, ICharacterCol
             true,
             Math.Abs(travel.Y),
             NormalFromEngine(_result.GetCollisionNormal()),
-            new SupportIdentity(_result.GetColliderRid().Id, _result.GetColliderShape()));
+            IdentityFor(_result.GetColliderId(), _result.GetColliderShape()));
     }
 
     /// <inheritdoc />
@@ -213,6 +224,56 @@ public sealed partial class GodotKinematicCollisionWorld : Node3D, ICharacterCol
 
     private const int MaximumReportedCollisions = 8;
     private const float OverlapProbeMotion = 0.0001f;
+
+    /// <summary>
+    /// Turns an engine collider into an identity that means the same thing in every
+    /// process.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The reason this is not simply <c>colliderRid.Id</c>, which it used to be: a
+    /// RID is a physics-server allocation handle, stable only within one process.
+    /// Support and contacts are discrete comparison fields checked before numeric
+    /// ones, so a per-process identity would mismatch on every grounded frame
+    /// between authority and owner and correct the player continuously.
+    /// </para>
+    /// <para>
+    /// Resolves the collider's ObjectID to its node and takes the <em>owning body's</em>
+    /// path. Deliberately not the shape node's path: shapes here are added as
+    /// unnamed children, so Godot assigns them <c>@CollisionShape3D@&lt;counter&gt;</c>,
+    /// which is instantiation order wearing a disguise.
+    /// </para>
+    /// <para>
+    /// A collider that cannot be resolved yields <see cref="SupportIdentity.None"/>
+    /// rather than a fabricated value. An invalid support reads as "not standing on
+    /// anything", which is visibly wrong and gets investigated; a fabricated one
+    /// would compare unequal across processes and produce a correction storm that
+    /// looks like a network problem.
+    /// </para>
+    /// </remarks>
+    private SupportIdentity IdentityFor(ulong colliderObjectId, int shapeIndex)
+    {
+        if (colliderObjectId == 0UL)
+        {
+            return SupportIdentity.None;
+        }
+
+        if (!_colliderPaths.TryGetValue(colliderObjectId, out var path))
+        {
+            path = ResolveBodyPath(colliderObjectId);
+            _colliderPaths[colliderObjectId] = path;
+        }
+
+        return path.Length == 0
+            ? SupportIdentity.None
+            : SceneColliderIdentity.FromBodyPath(path, shapeIndex);
+    }
+
+    private static string ResolveBodyPath(ulong colliderObjectId)
+    {
+        var instance = GodotObject.InstanceFromId(colliderObjectId);
+        return instance is Node node ? node.GetPath().ToString() : string.Empty;
+    }
     private ProfileBody RequireProfile(CollisionProfileKind kind)
     {
         if (!_initialized)

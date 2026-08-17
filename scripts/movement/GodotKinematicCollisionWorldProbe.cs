@@ -300,6 +300,29 @@ public sealed partial class GodotKinematicCollisionWorldProbe : Node3D
                 return;
             }
         }
+
+        // Stability within one process is what a raw physics-server RID already
+        // gave us, and it is why this defect survived four phases: the identity was
+        // stable for the wrong reason. What must hold is that the value is derived
+        // from authored content, so a second process derives the same one. Checked
+        // by deriving it independently from the node's own path.
+        var ground = GetNodeOrNull<StaticBody3D>("Ground");
+        if (ground is null)
+        {
+            _failures.Add("collider identity: the ground body is missing, so nothing was verified.");
+            return;
+        }
+
+        var expected = SceneColliderIdentity.FromBodyPath(ground.GetPath().ToString(), 0);
+        if (first!.Value != expected)
+        {
+            _failures.Add(
+                $"collider identity: the floor reported {first.Value.ColliderId}/" +
+                $"{first.Value.ShapeIndex} but its authored path derives " +
+                $"{expected.ColliderId}/{expected.ShapeIndex}. The identity is not scene-derived, " +
+                "so a second process will not agree with this one and every grounded frame will " +
+                "report a discrete mismatch.");
+        }
     }
 
     /// <summary>
