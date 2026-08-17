@@ -1484,6 +1484,14 @@ One blocker, six majors. The blocker was the one that changed how the game feels
 
 ## Phase 5B — Godot Motor Integration and Engine Verification
 
+**Executed as the first subsection of Phase 6.** 5B and Phase 6 share one
+plan/stub/review/implement/review cycle and one phase commit. They are kept as
+separate headings because 5B verifies the motor against the engine while Phase 6
+builds reconciliation on top of it, but running them as one unit is deliberate:
+P5B-01 blocks P06-11, and P5B-02's motor-parity trace is the only thing that
+would catch the explicit motor drifting from accepted feel before reconciliation
+starts masking it as a correction.
+
 The explicit motor is proven against a deterministic fake world and the offline
 arena. Nothing has yet proven it behaves the same way against the real engine,
 and the adapter that connects the two has neither a test nor a probe. This phase
@@ -1499,7 +1507,62 @@ P06-10 adds the commit-once Godot owner adapter and P06-11 integrates V2 owner
 prediction into `NetworkArena`. Engine-side performance budgets belong to P11-04.
 This phase is the prerequisite all three of those depend on.
 
+
+### Phase plan (recorded August 16, 2026, before any code)
+
+Phase 5B and Phase 6 are planned, stubbed, reviewed, implemented, reviewed, and
+committed as one unit. 5B is the first subsection.
+
+**What this unit delivers.** Phase 5 made a character's frame replayable. This
+unit makes *prediction* work: the owner keeps a bounded history of its own
+frames, compares each one against the authority's answer when it arrives,
+decides whether that difference matters, and replays only what it must. Phase 4
+already delivers the authority's answer; Phase 5 delivers a simulation that
+reproduces a frame exactly. Neither is useful until this connects them.
+
+**Why the order is what it is.**
+
+1. *Engine verification first (P5B-01..03).* Everything below trusts the motor
+   to behave identically in-engine. Verifying that after building reconciliation
+   on top of it would mean any divergence has two candidate causes, and the
+   expensive one — reconciliation — would be searched first.
+2. *Storage and comparison before policy (P06-01..04).* A correction policy is
+   only as good as the comparison feeding it, and comparison needs somewhere to
+   compare against. Contacts land in history here, which is why P05-18 is a
+   prerequisite of P06-01 rather than optional cleanup.
+3. *Reconciliation before wire (P06-05..07 before P06-08..09).* The protocol
+   should encode what reconciliation actually needs, not what seemed likely
+   beforehand. Finalizing the wire first would freeze a guess.
+4. *Engine adapter last (P06-10..12).* Committing to nodes is the one step that
+   cannot be unit-tested, so everything testable happens first.
+
+**Layering.**
+
+- *Engine verification* (P5B-01..03, `scripts/movement/`): adapter probe, a
+  legacy-versus-explicit motor parity trace, and a real per-frame query cost
+  measurement.
+- *History and comparison* (P06-01..04, `BattleArena.Multiplayer`):
+  `OwnerPredictionHistory` as a preallocated frame-indexed ring;
+  `CanonicalMovementStateHash` producing versioned diagnostics from quantized,
+  explicitly ordered fields; `OwnerReconciliationComparer` separating discrete
+  mismatches from numeric tolerance; `OwnerReconciliationPolicy` choosing
+  confirmed, ordinary replay, contact replay, or hard rebase.
+- *Reconciliation* (P06-05..07): tick-effective configuration lookup, then
+  `LocalMovementPredictionController` performing restore-and-replay and the
+  queued-future and hard-rebase paths.
+- *Wire* (P06-08..09): finalize the owner baseline and the compact
+  collision-world state, both derived from what reconciliation proved it needs.
+- *Engine* (P06-10..12): commit-once owner adapter, static-only V2 integration in
+  the arena, and separate-process canonical trace parity.
+
+**The rule this unit exists to enforce.** A correction is a claim that the
+owner's simulation was wrong. It must be triggered by a real, classified
+difference — never by a hash alone, never by a tolerance the comparer cannot
+name a field for, and never by smoothing collision truth. An unnecessary
+correction is a visible snap the player did nothing to deserve.
+
 - [ ] **P5B-01 — Verify the Godot collision adapter in-engine.**
+  - Status: **Stubbed**.
   - Purpose: `GodotKinematicCollisionWorld` has no test and no probe. P01-09
     proved the query *approach* but exercised a different class, and the adapter
     added a path the probe deliberately never ran: `ResolveOverlap` uses
@@ -1518,6 +1581,7 @@ This phase is the prerequisite all three of those depend on.
     against the deterministic world and the offline arena.
 
 - [ ] **P5B-02 — Prove the explicit motor matches the legacy motor in the arena.**
+  - Status: **Stubbed**.
   - Purpose: P05-16 supplies the switch but nothing compares the two motors.
     Both read the same authored `movement.json`, so a scripted input trace run
     through each should produce closely matching motion — and where it does not,
@@ -1532,6 +1596,7 @@ This phase is the prerequisite all three of those depend on.
     and field rather than averaged away.
 
 - [ ] **P5B-03 — Measure the explicit motor's real per-frame query cost.**
+  - Status: **Stubbed**.
   - Purpose: P01-11 measured the *probe's* query cost, not the motor's. The
     motor issues several queries per frame — recovery, sweep, per-slide-iteration
     re-sweep, ground probe, and up to three more for a step — so the real budget
@@ -1544,6 +1609,7 @@ This phase is the prerequisite all three of those depend on.
 ## Phase 6 — Owner History and Exact Reconciliation
 
 - [ ] **P06-01 — Implement the bounded owner prediction history.**
+  - Status: **Stubbed**.
   - Purpose: Store complete pre/post state, command, revisions, contacts, events,
     and diagnostics in a preallocated frame-indexed ring.
   - Target files: `OwnerPredictionHistory.cs`,
@@ -1552,6 +1618,7 @@ This phase is the prerequisite all three of those depend on.
     tests pass.
 
 - [ ] **P06-02 — Implement canonical diagnostic state hashing.**
+  - Status: **Stubbed**.
   - Purpose: Produce versioned XxHash64 diagnostics from explicitly ordered,
     quantized fields rather than raw floats or Protobuf bytes.
   - Target files: `CanonicalMovementStateHash.cs`,
@@ -1560,6 +1627,7 @@ This phase is the prerequisite all three of those depend on.
     seam tolerance, and schema-version tests pass.
 
 - [ ] **P06-03 — Implement tolerant owner state comparison.**
+  - Status: **Stubbed**.
   - Purpose: Separate exact gameplay-discrete mismatches from numeric tolerance
     and diagnostic-only manifold differences.
   - Target files: `OwnerReconciliationComparer.cs`,
@@ -1568,6 +1636,7 @@ This phase is the prerequisite all three of those depend on.
     support/profile/action mismatch, and first-field diagnostics pass.
 
 - [ ] **P06-04 — Implement correction classification policy.**
+  - Status: **Stubbed**.
   - Purpose: Choose confirmed, ordinary replay, contact replay, or hard local
     rebase without smoothing collision truth.
   - Target files: `OwnerReconciliationPolicy.cs`,
@@ -1576,6 +1645,7 @@ This phase is the prerequisite all three of those depend on.
     triggers correction.
 
 - [ ] **P06-05 — Integrate tick-effective movement configuration lookup.**
+  - Status: **Stubbed**.
   - Purpose: Resolve the canonical revision for every first-run/replay frame and
     queue baselines when definitions are briefly missing.
   - Target files: `MovementConfigurationTimeline.cs`,
@@ -1584,6 +1654,7 @@ This phase is the prerequisite all three of those depend on.
     rejected merely for a client's stale claimed revision.
 
 - [ ] **P06-06 — Implement static-world local reconciliation.**
+  - Status: **Stubbed**.
   - Purpose: Restore the exact authority frame and replay later owner commands
     through simulation only.
   - Target files: `LocalMovementPredictionController.cs`,
@@ -1592,6 +1663,7 @@ This phase is the prerequisite all three of those depend on.
     correct frames and converge.
 
 - [ ] **P06-07 — Implement queued-future and hard-rebase handling.**
+  - Status: **Stubbed**.
   - Purpose: Queue authority frames ahead of local simulation and perform one
     clean local rebase for missing history/epoch/penetration failures.
   - Target files: `LocalMovementPredictionController.cs`,
@@ -1600,6 +1672,7 @@ This phase is the prerequisite all three of those depend on.
     has one enumerated reason and clears bounded state atomically.
 
 - [ ] **P06-08 — Finalize the owner-baseline Protobuf state.**
+  - Status: **Stubbed**.
   - Purpose: Encode the proven Phase 5 state, ACKs, journals, lead policy, and hash
     schema without authority-only hit/damage fields.
   - Target files: `authority_state.proto`, `ProtobufProtocolCodecTests.cs`,
@@ -1608,6 +1681,7 @@ This phase is the prerequisite all three of those depend on.
     gates pass.
 
 - [ ] **P06-09 — Finalize the compact collision-world Protobuf state.**
+  - Status: **Stubbed**.
   - Purpose: Encode self-contained quantized frame state, bounded contacts/sources,
     and deterministic partition identity.
   - Target files: `authority_state.proto`,
@@ -1616,6 +1690,7 @@ This phase is the prerequisite all three of those depend on.
     supersession, and byte ceilings pass.
 
 - [ ] **P06-10 — Add commit-once Godot owner adapter.**
+  - Status: **Stubbed**.
   - Purpose: Reconcile/replay in value state, then commit one final collision pose
     and publish one presentation sample per real frame.
   - Target files: `GodotOwnerPredictionAdapter.cs`, `NetworkAvatar.cs`,
@@ -1624,6 +1699,7 @@ This phase is the prerequisite all three of those depend on.
     sample, and zero historical node/cue operations.
 
 - [ ] **P06-11 — Integrate static-only V2 owner prediction.**
+  - Status: **Stubbed**.
   - Purpose: Exercise exact history/reconciliation in the arena while explicitly
     disabling/softening predicted player collision until Phase 9.
   - Target files: `NetworkArena.cs`, `NetworkAvatar.cs`,
@@ -1632,6 +1708,7 @@ This phase is the prerequisite all three of those depend on.
     local input latency unchanged; V2 cannot become alpha default.
 
 - [ ] **P06-12 — Add separate-process canonical trace parity.**
+  - Status: **Stubbed**.
   - Purpose: Compare authority and owner per-frame state/first divergence across
     independent Godot processes.
   - Target files: `verify_owner_prediction_trace.ps1`, `NetworkArena.cs`,
