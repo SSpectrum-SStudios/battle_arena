@@ -258,7 +258,20 @@ public readonly record struct OwnerCorrectionTelemetry
                     authorityFrameErrorBefore,
                     appliedCorrection,
                     firstMismatch);
-                return 0;
+
+                // ReplayDepthExceeded carries its depth; every other hard rebase
+                // reports zero.
+                //
+                // The distinction matters because this reason's whole purpose is
+                // signalling that the replay budget is mis-tuned, and a rate with no
+                // magnitude cannot say how far over the cap the common case sits —
+                // which is the number P06-A3b needs to decide whether the cap should
+                // move. The other rebase reasons genuinely have no depth: a history
+                // miss or an epoch change never compared frames to span.
+                return reason == OwnerCorrectionReason.ReplayDepthExceeded &&
+                       authorityFrameErrorBefore is { } comparison
+                    ? CalculateReplayDepth(comparison, appliedCorrection)
+                    : 0;
 
             default:
                 throw new ArgumentOutOfRangeException(nameof(disposition), disposition, null);
@@ -318,9 +331,17 @@ public readonly record struct OwnerCorrectionTelemetry
                 // here is what made ExtremeError unusable as a stand-in.
                 RequireComparison(authorityFrameErrorBefore);
                 RequireNonEmptyMismatch(firstMismatch);
-                RequireRebaseTargetsComparison(
-                    authorityFrameErrorBefore!.Value,
-                    appliedCorrection);
+
+                // RequireRebaseNotFuture, not RequireRebaseTargetsComparison.
+                //
+                // The stricter form would pin the correction to the comparison
+                // frame, which here is up to a full replay window old — at sprint
+                // speed that is metres backwards, and this is the *common* case at
+                // real latency rather than an exceptional one. Adopting authority's
+                // old state and then fast-forwarding to the present is the only sane
+                // response, and the strict form forbids exactly that. HistoryMiss
+                // already permits it for the same reason.
+                RequireRebaseNotFuture(appliedCorrection);
                 break;
             default:
                 throw new ArgumentOutOfRangeException(
