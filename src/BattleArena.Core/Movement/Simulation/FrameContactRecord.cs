@@ -55,6 +55,64 @@ public readonly record struct FrameContactRecord
         contact.Collider,
         contact.Normal,
         contact.SurfaceKind);
+
+    /// <summary>
+    /// Total order by content, for canonical ordering.
+    /// </summary>
+    /// <remarks>
+    /// Collider first because it is the field a divergence is usually about, then
+    /// shape, then surface kind, then the normal component-wise. Every term is
+    /// content, so two endpoints holding the same contacts sort them identically
+    /// regardless of the order the world happened to report them in.
+    /// </remarks>
+    public static int CompareByContent(in FrameContactRecord left, in FrameContactRecord right)
+    {
+        var order = left.Collider.ColliderId.CompareTo(right.Collider.ColliderId);
+        if (order != 0)
+        {
+            return order;
+        }
+
+        order = left.Collider.ShapeIndex.CompareTo(right.Collider.ShapeIndex);
+        if (order != 0)
+        {
+            return order;
+        }
+
+        order = ((byte)left.SurfaceKind).CompareTo((byte)right.SurfaceKind);
+        if (order != 0)
+        {
+            return order;
+        }
+
+        order = Compare(left.Normal.X, right.Normal.X);
+        if (order != 0)
+        {
+            return order;
+        }
+
+        order = Compare(left.Normal.Y, right.Normal.Y);
+        return order != 0 ? order : Compare(left.Normal.Z, right.Normal.Z);
+    }
+
+    /// <summary>
+    /// Orders doubles with NaN placed last rather than comparing unordered.
+    /// </summary>
+    /// <remarks>
+    /// The same rule <see cref="CollisionContactState.CompareForStableResolution"/>
+    /// uses. A NaN normal should never reach here, but if one ever does, an
+    /// unordered comparison would make the sort itself non-deterministic — turning a
+    /// bad value into a divergence whose cause is invisible.
+    /// </remarks>
+    private static int Compare(double left, double right)
+    {
+        if (double.IsNaN(left))
+        {
+            return double.IsNaN(right) ? 0 : 1;
+        }
+
+        return double.IsNaN(right) ? -1 : left.CompareTo(right);
+    }
 }
 
 /// <summary>
@@ -167,8 +225,37 @@ public struct FrameContactBuffer : IEquatable<FrameContactBuffer>
     /// frame.
     /// </para>
     /// </remarks>
-    public bool DescribesSameContacts(in FrameContactBuffer other) =>
-        throw new NotImplementedException();
+    public bool DescribesSameContacts(in FrameContactBuffer other)
+    {
+        if (_count != other._count)
+        {
+            return false;
+        }
+
+        // Counts match, so a one-way containment check is sufficient: with no
+        // duplicates possible on the same collider and shape, every element of the
+        // left being present on the right means the sets are equal.
+        for (var index = 0; index < _count; index++)
+        {
+            var mine = _contacts[index];
+            var found = false;
+            for (var other_index = 0; other_index < other._count; other_index++)
+            {
+                if (mine.Equals(other._contacts[other_index]))
+                {
+                    found = true;
+                    break;
+                }
+            }
+
+            if (!found)
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
 
     /// <summary>
     /// P06-A2: contacts in a canonical order that is a pure function of content.
@@ -181,8 +268,44 @@ public struct FrameContactBuffer : IEquatable<FrameContactBuffer>
     /// would spend its first week investigating a non-bug on every corner frame.
     /// </remarks>
     /// <returns>How many were written.</returns>
-    public int CopyCanonical(Span<FrameContactRecord> destination) =>
-        throw new NotImplementedException();
+    /// <exception cref="ArgumentException">
+    /// The destination is too small. Refused rather than truncated: a silently
+    /// dropped contact would change the hash on one endpoint only, which is the
+    /// divergence this method exists to prevent.
+    /// </exception>
+    public int CopyCanonical(Span<FrameContactRecord> destination)
+    {
+        if (destination.Length < _count)
+        {
+            throw new ArgumentException(
+                $"A canonical copy needs room for {_count} contacts.",
+                nameof(destination));
+        }
+
+        for (var index = 0; index < _count; index++)
+        {
+            destination[index] = _contacts[index];
+        }
+
+        // Insertion sort. Capacity is 4, so this beats any general sort and, more
+        // importantly, allocates nothing and is trivially stable — Span.Sort with a
+        // comparison delegate would allocate on this path.
+        for (var index = 1; index < _count; index++)
+        {
+            var candidate = destination[index];
+            var position = index - 1;
+            while (position >= 0 &&
+                   FrameContactRecord.CompareByContent(destination[position], candidate) > 0)
+            {
+                destination[position + 1] = destination[position];
+                position--;
+            }
+
+            destination[position + 1] = candidate;
+        }
+
+        return _count;
+    }
 
     /// <summary>Whether any retained contact is on the given collider.</summary>
     public bool Touches(SupportIdentity collider)
