@@ -2,6 +2,7 @@ using System.Diagnostics;
 using BattleArena.Core.Common;
 using BattleArena.Core.Movement;
 using BattleArena.Core.Movement.Simulation;
+using BattleArena.Multiplayer.OwnerPrediction;
 using Godot;
 
 namespace BattleArena.Movement;
@@ -78,7 +79,8 @@ public sealed partial class MovementMotorCostProbe : Node3D
     /// either above what is affordable or to less than half of it.
     /// </para>
     /// </remarks>
-    private const int IntendedReplayDepth = 8;
+    private const int IntendedReplayDepth =
+        OwnerPredictionWorkPolicy.MeasuredMaximumReplayFrames;
 
     /// <summary>
     /// Percentile enforced instead of the single worst frame.
@@ -93,6 +95,22 @@ public sealed partial class MovementMotorCostProbe : Node3D
     /// and true worst are both still reported so a genuine spike stays visible.
     /// </remarks>
     private const double EnforcedPercentile = 0.95d;
+
+    /// <summary>
+    /// Share of the budget a depth must fit inside before it counts as affordable
+    /// for the purpose of promoting the cap.
+    /// </summary>
+    /// <remarks>
+    /// Deliberately stricter than the hard gate, which is the full budget. Two
+    /// separate thresholds because the two questions differ: "is the cap we run
+    /// affordable" must be answered against the real budget, while "should we raise
+    /// the cap" needs headroom, for two measured reasons. The top of the curve is
+    /// noisy — depth 32 measured p95 4668 microseconds on one run (112% of budget)
+    /// and 3477 on the next (83%) — so a single sample landing under 100% is not
+    /// evidence a depth is sustainable. And these numbers come from a development
+    /// machine rather than the slowest that will run the game.
+    /// </remarks>
+    private const double PromotionHeadroomShare = 0.70d;
 
     /// <summary>
     /// Share of one 60 Hz frame that movement replay may consume.
@@ -246,7 +264,7 @@ public sealed partial class MovementMotorCostProbe : Node3D
         foreach (var depth in ReplayDepths)
         {
             if (_perDepthWorstPercentile.TryGetValue(depth, out var p95) &&
-                p95 <= budgetMicroseconds &&
+                p95 <= budgetMicroseconds * PromotionHeadroomShare &&
                 depth > deepestAffordable)
             {
                 deepestAffordable = depth;
@@ -254,8 +272,8 @@ public sealed partial class MovementMotorCostProbe : Node3D
         }
 
         _report.Add(
-            $"deepest affordable measured depth across all geometry: {deepestAffordable} " +
-            $"(supported cap in use: {IntendedReplayDepth})");
+            $"deepest depth inside {PromotionHeadroomShare:P0} of budget across all geometry: " +
+            $"{deepestAffordable} (supported cap in use: {IntendedReplayDepth})");
 
         // The cap must be justified by the measurement, in both directions. Too
         // high is a frame budget overrun; too low, and Phase 6 quietly gives up

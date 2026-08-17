@@ -82,14 +82,30 @@ public readonly record struct OwnerPredictionWorkPolicy
     /// Hard ceiling on replay depth, measured in-engine by P5B-03.
     /// </summary>
     /// <remarks>
-    /// Not a guess. Over hostile geometry the explicit motor costs 64 queries and
-    /// about 2.1 ms of a 4.17 ms quarter-frame budget at depth 8; depth 12 costs
-    /// 83% of it and depth 16 exceeds it. Eight leaves half the budget spare for a
-    /// machine slower than the one measured. Raising it requires re-running
-    /// <c>tools/testing/run_movement_motor_cost.ps1</c>, which fails if this
-    /// constant and the measurement disagree.
+    /// <para>
+    /// Sixteen, measured under Jolt. Switching Godot's 3D physics engine from Godot
+    /// Physics to Jolt made motion queries about 2.5x cheaper — over the hostile
+    /// corner geometry, p95 at depth 16 fell from 4264 microseconds (102% of the
+    /// quarter-frame budget, i.e. unaffordable) to 1683 (40%). The deepest
+    /// affordable depth moved from 12 to 24.
+    /// </para>
+    /// <para>
+    /// Set to 16 rather than 24 deliberately: 40% of budget leaves real headroom for
+    /// a machine slower than the one measured, and 16 frames is 267 ms of replay
+    /// coverage at 60 Hz, which comfortably spans the 200 ms round trip P06-11
+    /// verifies. The authored 48-frame prediction lead is a ceiling, not a typical
+    /// value — a 200 ms round trip is roughly 6 frames of one-way lead plus jitter
+    /// margin.
+    /// </para>
+    /// <para>
+    /// <c>tools/testing/run_movement_motor_cost.ps1</c> fails if this constant and
+    /// the measurement disagree in <em>either</em> direction, which is how this
+    /// value got raised: it flagged that 8 was more than twice as conservative as
+    /// the evidence required, rather than quietly leaving free replay depth on the
+    /// table.
+    /// </para>
     /// </remarks>
-    public const int MeasuredMaximumReplayFrames = 8;
+    public const int MeasuredMaximumReplayFrames = 16;
 
     /// <summary>
     /// Most frames that may be resimulated for one authority answer.

@@ -2120,42 +2120,92 @@ measured, that is 10.9 us per query — below even P01-11's optimistic isolated
 figure of 10.8 us. **Engine queries cannot reach the target at any useful depth.**
 In-process capsule sweeps at 1-2 us put 48 frames comfortably under 1 ms.
 
-So the answer is to stop asking the engine during simulation: own a
-capsule-accurate deterministic collision world in-process, built once from the
-static scene, and use it for live frames *and* replay so the two agree by
-construction rather than by verification.
+**The conclusion drawn from this at first — build our own collision world — was
+wrong, and P06-A1 is withdrawn.** Cost is real, but the cheap levers (Jolt,
+memoization, accepting the measured depth) were never tried. What follows is the
+part of the research that survived, and it is the more important part.
 
-**This is also the answer to P06-A1.** A world built from the scene has
-scene-derived collider identities rather than per-process RIDs. Two independent
-blockers converging on one architecture is the strongest available signal that it
-is the right one, and it is why these are one unit.
+#### The engine boundary, decided by what Godot actually permits
 
-It re-points 5B's work rather than wasting it. `GodotKinematicCollisionWorld`
-stops being what simulation depends on at runtime and becomes the thing the
-in-process world is validated *against*; the P5B-01 probe becomes a geometry
-fidelity check, which is what it should have been. `DeterministicCollisionWorld`
-already proves the seam works — it is the same interface — but it is a box
-approximation and must not be promoted as-is, because 5B showed exactly where box
-and capsule disagree.
+The question "why are we decoupled from Godot at all" has one concrete answer, and
+it is not testability:
+
+**`PhysicsServer3D::space_step()` and `flush_queries()` are not public API.**
+Physics stepping is welded into the engine's main iteration loop. There are open
+proposals (godot-proposals #1373, #7998, discussion #5707) and a PR, and one
+proposal notes `space_step` was used internally for exactly client-side prediction
+and reconciliation and never exposed — but it is not in 4.4.
+
+Rollback requires replaying many simulation frames inside one engine frame.
+Therefore:
+
+- **A `RigidBody3D` driven by applied forces cannot be rolled back.** There is no
+  way to advance Godot's world N times in one frame, so an engine-integrated body
+  is unusable for owner prediction, however natural the physics would feel.
+- **Queries have no such restriction.** `BodyTestMotion` with an explicit `From`
+  transform may be issued as often as needed, which is exactly why P01-09 chose it.
+
+So the correct description of this architecture is: **Godot's physics is the query
+service; only the integration step is ours, because Godot will not re-step its
+world.** That is one forced seam, not a home-grown engine. This reasoning belongs
+in the plan permanently — the previous justification ("engine-free for
+testability") is weak, and it is what made the whole design look like
+gold-plating and nearly led to replacing the physics server.
+
+Everything else should use Godot: ENet transfer modes and channels for transport
+(already), built-in physics interpolation for render smoothing (already enabled),
+shape queries at explicit historical transforms for hit validation (Phase 8), and
+`GetColliderId()` for stable identity (P06-A1b).
 
 #### Phase 6A subsections
 
-- [ ] **P06-A1 — In-process deterministic static collision world.**
-  - Status: **Planned**.
-  - Purpose: the shared answer to identity and cost. A capsule-accurate,
-    engine-free collision world built once from authored static geometry, with
-    scene-derived collider identities that are byte-identical in every process.
-  - Target files: `StaticCollisionWorld.cs`, `StaticCollisionGeometry.cs`,
-    `SceneColliderIdentity.cs` (Core); a Godot-side builder that walks the scene
-    and emits the geometry; `CharacterCollisionContracts.cs` for identity
-    semantics.
-  - Verification: capsule sweeps agree with `GodotKinematicCollisionWorld` on the
-    arena's geometry inside an authored tolerance, including the step-edge case
-    5B found; identity for the same collider is equal across two processes; a
-    per-query cost gate under 3 us; allocation-free steady state.
-  - Note: this supersedes the "exclude Support and Contacts from cross-process
-    comparison" fallback the stub review floated. That fallback would have gutted
-    P06-04's `ContactReplay` and the grounding diagnosis story.
+- [x] **P06-A1 — WITHDRAWN. Do not build an in-process collision world.**
+  - Status: **Withdrawn before implementation.** Stubs deleted.
+  - I proposed replacing `PhysicsServer3D` with a capsule-accurate collision world
+    of our own, to solve cross-process identity and replay cost together. That was
+    an over-reach, and it is recorded rather than quietly dropped because the
+    reasoning that produced it is the reasoning to watch for.
+  - **Why it was wrong.** Both problems have far cheaper answers. Identity: Godot
+    exposes `PhysicsTestMotionResult3D.GetColliderId()`, an ObjectID that resolves
+    through `InstanceFromId` to the node and therefore to its authored path — a
+    dictionary, not a subsystem (now P06-A1b). Cost: measure Jolt, memoize replay
+    queries, and accept the measured depth with Phase 7 smoothing (now P06-A3).
+  - **The smuggled premise.** I treated bit-determinism as a requirement. It is
+    not — reconciliation exists precisely because two machines cannot be made to
+    agree exactly, and this plan's own canonical hash is documented as diagnostic
+    only and never a correction trigger. What replay actually needs is that the
+    same process replaying the same frames gets the same answer, which
+    `BodyTestMotion` against static geometry with an explicit `From` already
+    delivers, as the golden trace suite and P5B-01's stability case both show.
+  - **What it would have cost.** Reimplementing collision detection — and the stub
+    review found the specified overlap algorithm was already wrong for slopes
+    before a line was written, the yaw-only shape could not represent the arena's
+    two X-pitched ramps, and the per-query cost target was an assumption dressed
+    as a derivation. Against that: Godot's physics is hardened, and 5B had just
+    finished validating our use of it.
+  - Rocket League is a precedent for the opposite instinct: it does not use real
+    car geometry for collision at all, only oriented bounding boxes per preset,
+    with ball contact approximated as a force at a single point. Shipping
+    simplification, not geometric exactness.
+
+- [ ] **P06-A1b — Stable cross-process collider identity, inside the existing adapter.**
+  - Status: **Planned.**
+  - Purpose: what A1 was actually needed for. `SupportIdentity` is built from
+    `colliderRid.Id`, a per-process physics-server allocation handle, so `Support`
+    — a discrete comparison field checked before numeric ones — would mismatch on
+    every grounded frame between two processes and correct the owner continuously.
+  - Approach: resolve `GetColliderId()` to its node once per collider, derive an
+    identity from the **owning body's** authored scene path plus the shape ordinal,
+    and cache it by ObjectID. Never the shape node's own name: `MovementTestCourse`
+    adds shapes as unnamed children, so Godot assigns
+    `@CollisionShape3D@<counter>`, which is the same instantiation ordering the fix
+    exists to escape. A walker's natural `shapeNode.GetPath()` would pass every
+    single-process test and fail across processes — which is exactly how this
+    defect class survived four phases.
+  - Target files: `GodotKinematicCollisionWorld.cs`, `CharacterKinematicState.cs`.
+  - Verification: two processes loading the same scene derive equal identities for
+    the same collider; identity is stable across repeated queries within a process;
+    the cache adds no per-query allocation.
 
 - [ ] **P06-A2 — Canonical contact ordering in the rewind unit.**
   - Status: **Planned**.
@@ -2169,26 +2219,84 @@ and capsule disagree.
     equal and hash equally; ordering is a pure function of content; must precede
     P06-02.
 
-- [ ] **P06-A3 — Replay the full prediction lead, and prove it.**
-  - Status: **Planned**.
-  - Purpose: retire the lead-versus-depth conflict rather than managing it. With
-    A1 in place the cap is raised from 8 toward the authored lead, justified by
-    measurement rather than by choosing a smaller number.
+- [x] **P06-A3a — Measure Jolt against Godot Physics with the existing cost probe.**
+  - Status: **Done. Jolt adopted** (`project.godot: 3d/physics_engine="Jolt Physics"`).
+  - **Result: motion queries are about 2.5x cheaper, and it cost nothing but a
+    project setting.** p95 over the hostile corner geometry:
+
+    | depth | Godot Physics | Jolt | share of budget (Jolt) |
+    | --- | --- | --- | --- |
+    | 1 | 305 us | 107 us | 3% |
+    | 8 | 2158 us | 900 us | 22% |
+    | 12 | 3197 us | 1391 us | 33% |
+    | 16 | 4264 us (over) | 1741 us | 42% |
+    | 24 | 6817 us | 2624 us | 63% |
+    | 32 | 8650 us | 3366 us | 81% |
+
+  - Depth 16 went from *unaffordable* (102% of budget) to comfortable (42%). This
+    is the entire lead-versus-depth problem, solved by a config change — after I
+    had proposed replacing the physics server to solve it.
+  - **All three motor gates re-baselined green under Jolt**, which the plan required
+    because an engine swap invalidates every measurement 5B took. The parity numbers
+    are essentially unchanged — top speed, braking, roll and crouch travel identical
+    to three decimals, ledge climb within 5 mm — so the motor behaves the same and
+    the swap cost no feel.
+  - Also fixed here: `MovementMotorCostProbe` had its own private copy of the
+    replay-depth constant, which made the drift gate fictional. It now reads
+    `OwnerPredictionWorkPolicy.MeasuredMaximumReplayFrames` directly — the Godot
+    project references both assemblies, so no move to Core was needed.
+
+  - Original plan text, kept for the record: Godot 4.4 ships Jolt as an alternative under
+    `physics/3d/physics_engine`. P5B-03 measured 25-29 us per `BodyTestMotion`
+    against Godot Physics and never tried the alternative. If Jolt's motion queries
+    are materially cheaper the replay-depth problem may simply evaporate, and the
+    experiment is one project setting plus a re-run of a gate that already exists.
+  - Target files: `project.godot`, `run_movement_motor_cost.ps1`.
+  - Verification: the cost curve is reported for both engines; whichever is chosen
+    is recorded with its numbers; if Jolt is chosen, P5B-01's adapter probe and
+    P5B-02's parity probe both re-run green against it, because a physics engine
+    swap re-baselines every motor measurement 5B took.
+
+- [x] **P06-A3b — Set the replay-depth cap from measurement.**
+  - Status: **Done. Cap raised from 8 to 16.**
+  - Sixteen rather than the 24 that fits inside 70% of budget: 42% leaves real
+    headroom for a slower machine, and 16 frames is 267 ms of replay coverage at
+    60 Hz, which spans the 200 ms round trip P06-11 verifies. The authored 48-frame
+    lead is a ceiling, not a typical value — a 200 ms round trip is roughly six
+    frames of one-way lead plus jitter margin.
+  - **The bidirectional check earned its keep immediately.** It failed the build
+    saying the cap of 8 was "more than twice as conservative as the measurement
+    requires", which is how the value got raised at all rather than quietly leaving
+    replay depth unused.
+  - It then failed *again* at 16, claiming depth 32 was affordable — which exposed a
+    flaw in the check rather than in the cap. The top of the curve is noisy: depth
+    32 measured p95 4668 us on one run (112% of budget) and 3477 on the next (83%).
+    Promotion now requires a depth to fit inside 70% of budget, while the hard gate
+    for depths at or below the cap stays at the full budget. Two thresholds because
+    "is the cap affordable" and "should the cap be raised" are different questions,
+    and only the second needs margin.
+  - Memoizing replay queries is no longer needed for the Brazil target and is left
+    unbuilt. It remains the cheap lever if a future cap needs to approach 48.
+
+- [ ] **P06-A3b-superseded — original plan text, kept for the record.**
+  - Purpose: resolve the lead-versus-depth conflict without an architectural
+    change. Authored lead reaches 48 frames; measured affordable depth was 8-12.
+  - Approach, cheapest first: take whatever A3a gives; memoize sweep results across
+    a replay, since `ExplicitMotorGoldenTraceTests` documents that replay re-issues
+    *identical* queries for frames whose inputs did not change, so a quantized
+    origin/motion/profile key collapses most of a deep replay; then accept the
+    resulting depth and let Phase 7's correction debt smooth what cannot be
+    replayed.
   - Target files: `LocalMovementPredictionController.cs`
-    (`OwnerPredictionWorkPolicy`), `MovementMotorCostProbe.cs`,
-    `run_movement_motor_cost.ps1`.
-  - Verification: the cost probe measures depths up to the authored maximum lead
-    against the in-process world and reports where the budget is crossed; the
-    supported cap is derived from that curve; the probe fails if the constant and
-    the measurement disagree in either direction. If the full lead still does not
-    fit, that is recorded as a measured limit with the rebase-plus-smoothing
-    fallback named — but it is no longer assumed in advance.
-  - Deferred deliberately to Phase 9: **input decay for remote players.** Queries
-    are masked to static geometry today, so remote players are absent from replay
-    entirely and there is nothing yet to decay. Recorded here because it is the
-    Rocket League technique that belongs with frame-aligned player collision, and
-    because inventing it earlier would be building for a system that does not
-    exist.
+    (`OwnerPredictionWorkPolicy`), `MovementMotorCostProbe.cs`.
+  - Verification: the cost probe measures depths up to the authored lead, the
+    supported cap is derived from where the budget is actually crossed, and the
+    probe fails if the constant and the measurement disagree in either direction.
+    Rebase-plus-smoothing beyond the cap is a stated outcome rather than a
+    surprise, and `ReplayDepthExceeded` (P06-A4) is the honest name for it.
+  - Deferred to Phase 9: **input decay for remote players.** Queries are masked to
+    static geometry today, so remote players are absent from replay entirely and
+    there is nothing yet to decay.
 
 - [ ] **P06-A4 — Depth-exceeded and configuration-exhausted correction outcomes.**
   - Status: **Planned**.
@@ -2300,6 +2408,63 @@ forced when it is a decision.
   both projects — so the fix is to delete the probe's private `IntendedReplayDepth`
   and read `OwnerPredictionWorkPolicy.MeasuredMaximumReplayFrames`, not to move the
   constant into Core.
+
+- [x] **P06-A5 — Delete the three test-only models.**
+  - Status: **Done. ~3,100 lines removed, and PX-01 is resolved as a side effect.**
+  - Deleted `PredictionPerformanceProbe`, `PredictionPacketBudgetProbe`,
+    `DeterministicReliableChannelModel` and their three test files. The multiplayer
+    suite went from 952 tests to 904 and now passes on three consecutive runs with
+    no order-dependent failures.
+  - One type was rescued rather than deleted: `PredictionTransportOverhead` moved to
+    its own file, because the protobuf codec tests use it to check that a *really
+    encoded* owner command still fits an MTU-safe datagram once ENet or Steam
+    framing and IP/UDP headers are added. That is measurement against real bytes,
+    which is exactly the kind of evidence this revision kept.
+
+- [ ] **P06-A5-superseded — original plan text, kept for the record.**
+  - Purpose: `PredictionPerformanceProbe` (1,130 lines), `PredictionPacketBudgetProbe`
+    (1,124) and `DeterministicReliableChannelModel` (877) are referenced by nothing
+    but their own tests. Together that is ~3,100 lines of the shipping assembly
+    modelling things we now measure: 5B measured replay cost for real and got a
+    better answer than `PredictionPerformanceProbe` projects, and
+    `DeterministicReliableChannelModel` reimplements reliable-ordered delivery and
+    head-of-line blocking that ENet already provides and that we already use.
+  - They are also the root of PX-01: adding one value to `OwnerCorrectionReason`
+    shifted execution order and moved a memory-layout ceiling from 4048 to 4848
+    bytes, so the correction taxonomy that Phases 6 through 9 all extend cannot
+    currently be extended without reding the build.
+  - The measured *numbers* are worth keeping; they are already recorded in P01-10
+    and P01-11. The code that produced them is not.
+  - Verification: both suites green with no order-dependent allocation failures,
+    on repeated cold runs.
+
+#### The lens this revision came from
+
+Phase 1 was titled "Evidence, Impairment, and Feasibility" and produced evidence by
+building *models*. Phase 5B produced better evidence in a fraction of the code by
+running the real thing headlessly and asserting on it. Every place this plan
+modelled something instead of measuring it, the model turned out to be both larger
+and less accurate — and the withdrawn P06-A1 was about to repeat that at the scale
+of a physics engine.
+
+**Standing rule for the rest of the plan: prefer a headless probe against the real
+engine over a model of the engine.**
+
+Consequences already identified elsewhere:
+- **Phase 7, P07-01** should shrink. Godot's built-in physics interpolation is
+  already enabled (`project.godot: common/physics_interpolation=true`) and
+  `NetworkAvatar` already manages it per node, so "one-tick interpolation" is
+  largely provided. P07-02/03 correction debt stays — that is genuinely
+  netcode-specific and Godot has no equivalent.
+- **Phase 8** should validate hits with Godot shape queries at explicit historical
+  transforms (`PhysicsShapeQueryParameters3D.Transform`), not custom geometry.
+- **Phase 9** is where goal 3 lands: forward owner commands over the existing
+  prediction mesh and predict remote players from their real inputs — the pattern
+  Unity's Netcode for Entities documents — with Rocket League's input decay as the
+  fallback when a peer's input has not arrived, and authority always overriding.
+- **Protobuf stays.** It is an intentional choice for versioned wire contracts and
+  is not up for revision; the guidance is only to avoid *growing* it beyond what
+  each phase needs.
 
 #### Deferred to Phase 6B, folded into existing subsections
 
@@ -2900,7 +3065,15 @@ collider identity above.
 Not introduced by this plan, but they affect its gates and should not be
 mistaken for regressions by a later session.
 
-- [ ] **PX-01 — Stabilize the order-dependent allocation probes.**
+- [x] **PX-01 — RESOLVED by P06-A5, not by stabilizing the probes.**
+  - Four of the five members lived in `PredictionPerformanceProbe` and its tests,
+    which P06-A5 deleted along with the model they measured. The multiplayer suite
+    now passes on repeated consecutive runs, and the correction taxonomy can be
+    extended again — which was the thing this had started to block.
+  - Worth noting how it was fixed: not by making the flaky measurement stable, but
+    by deleting the thing being measured once it stopped being useful. The
+    allocation ceilings were guarding a model that P5B-03 superseded with a real
+    in-engine measurement. Original entry follows.
   - Purpose: Three Phase 1 allocation tests measure GC allocation without enough
     warm-up isolation, so they fail on a cold run immediately after a build and
     pass on warm re-runs and in isolation. They will intermittently red a CI run
