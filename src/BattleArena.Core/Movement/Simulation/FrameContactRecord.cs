@@ -68,9 +68,24 @@ public readonly record struct FrameContactRecord
 /// and three walls in a corner.
 /// </para>
 /// <para>
-/// Order is the motor's stable contact order, not the world's report order, so
-/// two endpoints that resolved the same frame store the same sequence and the
-/// comparer can compare them positionally.
+/// Order is the motor's stable contact order rather than the world's report
+/// order. That was originally taken to mean two endpoints resolving the same
+/// frame store the same sequence, so a comparer could compare positionally.
+/// <b>P5B-01 disproved that in-engine and it must not be relied on.</b> The Godot
+/// adapter gives every contact of a sweep the same travel fraction, so
+/// <see cref="CollisionContactState.CompareForStableResolution"/>'s primary key is
+/// constant and the real ordering falls through to a physics-server RID — which
+/// is allocation order, and differs between processes.
+/// </para>
+/// <para>
+/// Two consequences for anything comparing frames. First, contacts must be
+/// compared as a <em>set</em> keyed by content, never positionally. Second,
+/// <see cref="Equals(FrameContactBuffer)"/> and <see cref="GetHashCode"/> below
+/// <em>are</em> positional, and so is the synthesized equality of any record
+/// struct containing one — including <see cref="CharacterSimulationState"/>. Any
+/// canonical hash over this buffer must therefore sort before hashing, or two
+/// endpoints that agree about a corner will report different hashes and the
+/// difference will be misread as a real divergence.
 /// </para>
 /// </remarks>
 public struct FrameContactBuffer : IEquatable<FrameContactBuffer>

@@ -2019,6 +2019,190 @@ into evidence about the real engine.
 
 ## Phase 6 — Owner History and Exact Reconciliation
 
+### Plan refresh: what Phase 5B changed for the rest of Phase 6
+
+P06-01..12 were planned and their stubs reviewed *before* 5B ran. 5B then
+measured the motor in-engine and produced four constraints that the reviewed
+stubs do not account for. Recording them here, before implementing, because each
+one is a thing reconciliation would otherwise get wrong in a way that looks like
+a network problem:
+
+1. **The motors are one frame out of phase, and reconciliation compares
+   same-frame.** Measured: same-frame horizontal position differs by 0.126 m,
+   collapsing to 0.026 m at a one-frame offset. Reconciliation compares an
+   owner's predicted frame against authority's answer *for that frame*, so any
+   phase error in that path reads as a divergence on **every** frame and would
+   correct the player continuously — the worst possible failure, because it looks
+   exactly like a tolerance being too tight. P06-03 and P06-06 must each carry an
+   explicit test that a correctly-predicted frame compared against its own
+   authority answer produces *no* difference, with the frame identity asserted on
+   both sides rather than assumed.
+
+2. **The replay-depth cap is 8, measured, not chosen.**
+   `OwnerPredictionWorkPolicy.MaximumReplayFrames` must not exceed it. Over
+   hostile geometry depth 12 costs 83% of a quarter-frame budget and depth 16
+   costs 102%. The policy should refuse a larger value rather than trusting its
+   caller, and the constant should name P5B-03 as its source so the next person
+   to raise it knows what to re-measure.
+
+3. **Contact ordering is not reliable in-engine, so contact comparison cannot be
+   an equality check.** The adapter reports one shared travel fraction for every
+   contact of a sweep, so `CompareForStableResolution`'s primary key is constant
+   and the real ordering falls through to a physics-server RID. Two processes can
+   therefore order the same corner's contacts differently. P06-03 must compare
+   contacts as a *set keyed by collider and surface kind*, never as an ordered
+   sequence, and P06-04 must not raise `ContactReplay` on an ordering difference
+   alone. This is a workaround for a recorded defect, not the desired end state —
+   see P5B-01's finding 1 for the real fix and why it was deferred.
+
+4. **Discrete grounding fields are the ones that flicker.** The step-solver
+   blocker 5B found expressed itself as `IsGrounded`, `GroundNormal` and
+   `Support` changing every frame of a step approach while position stayed
+   plausible. That is the shape of a motor bug reaching reconciliation, so
+   P06-03's discrete-field comparison is load-bearing for diagnosis, and P06-04's
+   reason codes must distinguish it from a numeric drift. A correction storm on
+   stairs should name grounding, not position.
+
+Two further deferrals inherited from 5B that Phase 6 must not silently depend
+on: `RecoverPenetration`'s skin scaling is documented-wrong but left alone
+because correcting it broke coasting, and a climbable ledge shallower than one
+capsule radius can no longer be stepped onto. Neither blocks reconciliation, but
+both are motor behaviour that a trace comparison will faithfully reproduce, so
+they must not be mistaken for reconciliation defects.
+
+### Stub review of the refresh: it closed one constraint of four
+
+A critic reviewed the refresh above against the stub set. Its verdict on the four
+constraints: **(d) closed, (a) half closed, (b) and (c) not closed.** Recording
+the findings, because the refresh's own prose was more confident than the shapes
+it described — the exact failure the review exists to catch.
+
+**BLOCKER — collider identity is process-local, so constraint (c)'s fix does not
+work.** I framed the contact problem as *ordering*. The deeper problem is the
+key. `SupportIdentity` is built from `colliderRid.Id`
+(`GodotKinematicCollisionWorld.cs`), a physics-server allocation handle. P5B-01's
+`VerifyStableColliderIdentity` proved it stable *within one process* — which is
+all it tested — and it is not comparable between two. Authority and owner are two
+processes; that is P06-11's and P06-12's whole premise. Consequences:
+  - `ContactsDescribeTheSameSurfaces` keyed on collider returns false on every
+    frame with any contact, over geometry both sides agree about.
+  - Worse, `OwnerMismatchField.Support` compares `Kinematic.Support`, also a RID,
+    and discrete facts are compared before numeric ones — so **every grounded
+    frame produces a discrete mismatch**, and the result is continuous
+    `ContactReplay` corrections. That is the same correction-storm failure
+    constraint (1) exists to prevent, arriving through a different door.
+  - Switching from sequence to set does not touch this. Comparing as a set was
+    still right, but insufficient.
+  - **This changes subsection ordering**, answering the one open question the
+    refresh had: P06-09's deterministic, scene-derived collider identity must
+    land *before* P06-03 can compare contacts or support cross-process.
+    Otherwise P06-03 must explicitly exclude both fields and document contact
+    divergence as unreachable — which guts P06-04's `ContactReplay` and
+    constraint (d)'s diagnosis story. Decide this before implementing P06-03.
+
+**BLOCKER — exceeding the replay-depth cap is the common case at real latency and
+has no representable outcome.** Retention is 256 frames and authored prediction
+lead reaches 48, so the replay span exceeds 8 on every correction above roughly
+130 ms RTT — and P06-11's own verification runs 120 ms and 200 ms. At 200 ms it is
+the *only* case. Yet: no `OwnerCorrectionReason` means "small difference, too old
+to replay"; `OwnerCorrectionTelemetry.Create` throws either way, because
+`HistoryMiss` requires no comparison to have happened and `ExtremeError` requires
+a non-zero one that a 2 cm difference does not justify calling extreme; and
+`OwnerReconciliationPolicy.Decide` stamps `OrdinaryReplay` *before* `ReplayFrom`
+discovers the span, so the decision contradicts what happened. Needs a new reason
+value, a telemetry factory that accepts it, and `Decide` receiving the replay span
+(computable as `history.NewestFrame - frame` before deciding). The same gap
+applies to `ConfigurationHistoryPolicyExhausted` mid-replay.
+
+**BLOCKER — the cue dedup story has no path end to end.**
+`OwnerSimulationEvent` stores `(eventId, kind)`; `PredictedCueIdentity` requires
+`(epoch, kind, originKind, originId, eventOrdinal)` and throws on an unspecified
+origin or a zero id. Epoch is recoverable from the epoch-bound history;
+`OriginKind` and `EventOrdinal` are simply absent, so replay must invent them —
+which is the re-derivation the same file's opening remark argues against, and a
+derivation that is not bit-identical makes the ledger fire the sound again.
+Separately, the only member that could offer identities to the ledger is
+`GodotOwnerPredictionAdapter.CommitFrame`, whose parameters carry no events and
+which has no access to history. So events are stored by a type documented as not
+using them and consumed by a type that cannot see them. Fix is a shape change:
+widen `OwnerSimulationEvent` to the ledger's full key, and either pass the
+committed frame's event buffer to `CommitFrame` or let the controller own
+`ObservePredicted` and pass emit decisions out.
+
+**BLOCKER — `ReplayFrom`'s remark recommends the mechanism that destroys the data
+replay needs.** It says frames are resimulated "with the input and applied
+transitions it originally consumed" and, in the next sentence, that "history is
+truncated and rewritten rather than edited ad hoc". The first needs frames F+1..N
+present during replay, because that is the only place `Command` and
+`AppliedTransitions` live. `TruncateAfter` deletes exactly those before replay
+reads them. `TryReplacePostState` is sufficient alone. Keep replace-in-place,
+restrict `TruncateAfter` to the rebase path, and delete the truncate sentence.
+
+**SHOULD-FIX — record equality and the canonical hash stayed order-sensitive, and
+`FrameContactRecord`'s own comment asserts the premise 5B disproved.** It still
+claims the stored sequence is comparable positionally. `FrameContactBuffer.Equals`
+is a positional walk and `GetHashCode` folds in order, and
+`CharacterSimulationState` is a record struct containing one — so `==` and the
+canonical hash inherit it. P06-02 would then hash contacts in stored order, two
+processes that agree about a corner would report different hashes, and the
+comparer classifies that as `DiagnosticHashOnly`, documented as "a bug to
+investigate". P06-12 would spend its first week investigating a non-bug on every
+corner frame. Either canonicalize order on insert or require P06-02 to sort before
+hashing.
+
+**SHOULD-FIX — `OwnerPredictionWorkPolicy` cannot refuse anything and its safety
+net is fictional.** It is a record struct with only `init` properties, so
+`new OwnerPredictionWorkPolicy { MaximumReplayFrames = 64 }` compiles; `IsValid`
+is a backstop nothing forces callers through, and `default` yields a silently
+replay-free policy. Needs a validating factory. And the remark's claim that
+`run_movement_motor_cost.ps1` "fails if this constant and the measurement
+disagree" is false: the probe declares its own `IntendedReplayDepth` and has no
+reference to `BattleArena.Multiplayer`, so raising the Multiplayer constant leaves
+the gate green. The gate protects the probe's copy of the number, not the one
+Phase 6 uses. Either move the constant to Core where the probe can read it, or
+have the probe assert against a shared value.
+
+**SHOULD-FIX — the queued-future path has bounds but no consumer.**
+`MaximumQueuedFutureStates` and `QueuedFutureCount` exist; nothing queues,
+nothing drains, and no type holds a queued entry (`state`, `epoch`, `hash` must
+all be retained). Worse, if `PredictFrame` drains implicitly it returns
+`CharacterFrameResult` while `CommitFrame` needs an `OwnerReconciliationResult`,
+so a queued state that triggers a replay during catch-up produces a correction the
+adapter cannot be told about and `MaySmooth` cannot be consulted for. Needs an
+explicit `ApplyQueuedFutureStates()` or a widened return.
+
+**SHOULD-FIX — "a state for a frame already reconciled is idempotent" is not
+deliverable.** `PruneThrough` drops confirmed frames, so a retransmitted or
+reordered state for a confirmed frame becomes `OlderThanRetention` → `HistoryMiss`
+→ `HardRebase`: a duplicate packet produces a visible snap.
+`OwnerHistoryLookupDecision` cannot distinguish "gone because confirmed" from
+"gone because the window moved", and those want opposite responses.
+
+**SHOULD-FIX — constraint (a) is closed on the read side only.** `Compare`'s
+frame-identity fault is real and assertable. But `PredictFrame` receives two
+independent frame numbers (`command.TargetFrame` and `context.Frame`) with no
+coherence contract — and 5B's own phase investigation turned on exactly that
+pairing — and `OwnerPredictedFrame` carries four frame numbers with no stated
+relationship. Cheap to fix, and it is the guard whose absence produces the failure
+the refresh itself calls the worst available.
+
+**MINOR** — two wrong comments worth correcting because they will mislead:
+`Telemetry` is described as "accumulated for this combatant" but
+`OwnerCorrectionTelemetry` is a single immutable observation
+(`PredictionTelemetryRing` is the accumulator); and "replay depth is derived by
+telemetry ... so it has one source" is false, since telemetry computes the span
+from frame numbers while `FramesReplayed` records what replay actually did, and
+those disagree exactly in the depth-cap case above. Also
+`OwnerReconciliationPolicy` cannot read a hash *value* — verified — but
+`DiagnosticHashOnly` is a `Kind` it does receive, so the structural claim is
+slightly weaker than stated.
+
+Verified and needing no change: P06-05's position relative to the comparer is
+correct (the comparer reads revisions off the state directly and needs no
+timeline); an epoch change mid-replay is correctly unrepresentable because history
+is epoch-bound; and deferring P06-08/09 remains right for everything except the
+collider identity above.
+
 - [ ] **P06-01 — Implement the bounded owner prediction history.**
   - Status: **Stubs Reviewed**.
   - Purpose: Store complete pre/post state, command, revisions, contacts, events,

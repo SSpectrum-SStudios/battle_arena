@@ -78,7 +78,29 @@ public interface IOwnerReplayContext
 /// </remarks>
 public readonly record struct OwnerPredictionWorkPolicy
 {
-    /// <summary>Most frames that may be resimulated for one authority answer.</summary>
+    /// <summary>
+    /// Hard ceiling on replay depth, measured in-engine by P5B-03.
+    /// </summary>
+    /// <remarks>
+    /// Not a guess. Over hostile geometry the explicit motor costs 64 queries and
+    /// about 2.1 ms of a 4.17 ms quarter-frame budget at depth 8; depth 12 costs
+    /// 83% of it and depth 16 exceeds it. Eight leaves half the budget spare for a
+    /// machine slower than the one measured. Raising it requires re-running
+    /// <c>tools/testing/run_movement_motor_cost.ps1</c>, which fails if this
+    /// constant and the measurement disagree.
+    /// </remarks>
+    public const int MeasuredMaximumReplayFrames = 8;
+
+    /// <summary>
+    /// Most frames that may be resimulated for one authority answer.
+    /// </summary>
+    /// <remarks>
+    /// Validated against <see cref="MeasuredMaximumReplayFrames"/> by
+    /// <see cref="Create"/> rather than trusted. A caller that asks for deeper
+    /// replay is asking to miss frame deadlines, and the failure would appear as
+    /// stutter under exactly the conditions that cause corrections — which is when
+    /// it is hardest to attribute.
+    /// </remarks>
     public int MaximumReplayFrames { get; init; }
 
     /// <summary>
@@ -87,6 +109,27 @@ public readonly record struct OwnerPredictionWorkPolicy
     /// vector and the newest answer is the one that matters.
     /// </summary>
     public int MaximumQueuedFutureStates { get; init; }
+
+    /// <summary>
+    /// The only way to obtain a policy with non-default values.
+    /// </summary>
+    /// <remarks>
+    /// A factory rather than object-initializer syntax because
+    /// <see cref="IsValid"/> is a backstop nothing forces a caller through:
+    /// <c>new OwnerPredictionWorkPolicy { MaximumReplayFrames = 64 }</c> would
+    /// otherwise compile and produce a live policy that quietly misses frame
+    /// deadlines. The stub review caught the previous shape claiming to refuse a
+    /// larger value while being unable to.
+    /// </remarks>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// <paramref name="maximumReplayFrames"/> exceeds
+    /// <see cref="MeasuredMaximumReplayFrames"/>, or either bound is not positive.
+    /// A zero replay budget is refused too — it is a silently prediction-free
+    /// policy, which looks like working code and corrects on every frame.
+    /// </exception>
+    public static OwnerPredictionWorkPolicy Create(
+        int maximumReplayFrames,
+        int maximumQueuedFutureStates) => throw new NotImplementedException();
 
     public bool IsValid => throw new NotImplementedException();
     public static OwnerPredictionWorkPolicy Default => throw new NotImplementedException();
@@ -218,17 +261,37 @@ public sealed class LocalMovementPredictionController
     /// Replays from a restored frame forward to the newest predicted frame.
     /// </summary>
     /// <remarks>
+    /// <para>
     /// Each replayed frame is resimulated with the input and applied transitions
     /// it originally consumed, under the configuration revision in force on it,
-    /// then its post-state is replaced in history. History is truncated and
-    /// rewritten rather than edited ad hoc, so a stored frame can never disagree
-    /// with its own predecessor.
+    /// then its post-state is replaced in place via
+    /// <see cref="OwnerPredictionHistory.TryReplacePostState"/>.
+    /// </para>
+    /// <para>
+    /// <b>Replace in place, never truncate.</b> An earlier version of this remark
+    /// said history was "truncated and rewritten rather than edited ad hoc", which
+    /// contradicted the sentence before it: the frames after the restore point are
+    /// the only place the commands and applied transitions live, so truncating
+    /// them deletes exactly what replay is about to read.
+    /// <see cref="OwnerPredictionHistory.TruncateAfter"/> belongs to the rebase
+    /// path alone, where the retained future genuinely is invalid.
+    /// </para>
     /// </remarks>
     /// <returns>
     /// Frames resimulated, or -1 when the span exceeded
     /// <see cref="OwnerPredictionWorkPolicy.MaximumReplayFrames"/> and the caller
     /// must rebase instead.
     /// </returns>
+    /// <remarks>
+    /// The -1 path is not an edge case and must not be treated as one: retention is
+    /// 256 frames while authored prediction lead reaches 48, so above roughly
+    /// 130 ms RTT the span exceeds the cap on every correction, and at the 200 ms
+    /// P06-11 verifies it is the only case. It therefore needs its own
+    /// <see cref="OwnerCorrectionReason"/> and a telemetry factory that accepts a
+    /// comparison having happened — see the Phase 6 stub review. Deciding
+    /// <see cref="OwnerCorrectionAction"/> before the span is known would stamp
+    /// <c>OrdinaryReplay</c> on a frame that then rebased.
+    /// </remarks>
     internal int ReplayFrom(
         SimulationInstant restoredFrame,
         in CharacterSimulationState restoredState) => throw new NotImplementedException();

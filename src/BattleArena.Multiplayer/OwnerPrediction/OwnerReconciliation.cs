@@ -135,6 +135,22 @@ public readonly record struct OwnerStateDifference
     /// <summary>Whether the differing field is a contact or support fact.</summary>
     public bool IsContactDivergence => throw new NotImplementedException();
 
+    /// <summary>
+    /// Whether the differing field is a grounding fact —
+    /// <see cref="OwnerMismatchField.Grounded"/>,
+    /// <see cref="OwnerMismatchField.Support"/>, or
+    /// <see cref="OwnerMismatchField.Contact"/>.
+    /// </summary>
+    /// <remarks>
+    /// Separated from numeric drift because P5B found what a motor bug reaching
+    /// reconciliation actually looks like: the step-solver blocker flickered
+    /// exactly these three fields on every frame of a step approach while position
+    /// stayed plausible. A correction storm on a staircase should therefore name
+    /// grounding rather than position, so the next person to see one goes looking
+    /// at the motor instead of at tolerances.
+    /// </remarks>
+    public bool IsGroundingDivergence => throw new NotImplementedException();
+
     public static OwnerStateDifference None => throw new NotImplementedException();
 }
 
@@ -181,6 +197,29 @@ public readonly record struct OwnerReconciliationTolerances
 /// Discrete facts are checked before numeric ones: a character standing on a
 /// different surface is a bigger statement than one standing a centimetre away,
 /// and reporting the centimetre would hide it.
+/// <para>
+/// <b>Two constraints from P5B that this must honour.</b>
+/// </para>
+/// <para>
+/// First, <em>contacts are compared as a set, never as a sequence.</em> The Godot
+/// adapter reports one shared travel fraction for every contact of a sweep, so
+/// <c>CollisionContactState.CompareForStableResolution</c>'s primary key is
+/// constant in-engine and the real ordering falls through to a raw
+/// physics-server RID. Two processes can order the same corner's contacts
+/// differently for reasons that have nothing to do with simulation, so an
+/// ordered comparison would report a divergence on geometry both sides agree
+/// about. This is a workaround for a recorded adapter defect rather than the
+/// desired end state — see P5B-01's finding 1.
+/// </para>
+/// <para>
+/// Second, <em>frame identity is asserted, not assumed.</em> The explicit and
+/// legacy motors were measured one frame out of phase, and a phase error here
+/// would read as a divergence on every single frame and correct the player
+/// continuously — which is indistinguishable from a tolerance set too tight, and
+/// so among the most expensive mistakes available. Comparing states from
+/// different frames is a caller bug and must fault rather than produce a
+/// difference.
+/// </para>
 /// </remarks>
 public sealed class OwnerReconciliationComparer
 {
@@ -189,6 +228,19 @@ public sealed class OwnerReconciliationComparer
 
     public OwnerReconciliationTolerances Tolerances => throw new NotImplementedException();
 
+    /// <summary>
+    /// Whether two frames' contact sets describe the same surfaces, ignoring order.
+    /// </summary>
+    /// <remarks>
+    /// Keyed by collider identity and surface kind. Bounded at
+    /// <c>FrameContactBuffer.Capacity</c> (4), so the set comparison is a nested
+    /// scan rather than an allocation — this runs on a path documented as
+    /// allocation-free, and a HashSet here would allocate per compared frame.
+    /// </remarks>
+    public bool ContactsDescribeTheSameSurfaces(
+        in FrameContactBuffer predicted,
+        in FrameContactBuffer authoritative) => throw new NotImplementedException();
+
     /// <param name="authoritativeHash">
     /// The hash the authority reported for this frame, when it sent one. Compared
     /// only after every field agreed, so a mismatch here yields
@@ -196,6 +248,11 @@ public sealed class OwnerReconciliationComparer
     /// correction. The parameter exists now, before the wire carries it in
     /// P06-08, so the shape does not have to change later.
     /// </param>
+    /// <exception cref="ArgumentException">
+    /// The two states are for different frames. This is the phase-error guard: it
+    /// faults rather than returning a difference, because a difference would be
+    /// acted on and a fault will not be. See the class remarks.
+    /// </exception>
     public OwnerStateDifference Compare(
         in CharacterSimulationState predicted,
         in CharacterSimulationState authoritative,
