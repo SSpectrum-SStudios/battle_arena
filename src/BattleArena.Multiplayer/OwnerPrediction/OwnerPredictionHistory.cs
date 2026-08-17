@@ -1,5 +1,6 @@
 using System.Runtime.CompilerServices;
 using BattleArena.Core.Common;
+using BattleArena.Core.Movement;
 using BattleArena.Core.Movement.Simulation;
 
 namespace BattleArena.Multiplayer.OwnerPrediction;
@@ -24,7 +25,6 @@ namespace BattleArena.Multiplayer.OwnerPrediction;
 // Stub-only: the inline storage is declared for the shape review but not yet
 // read or written, because every member still throws. Both suppressions come off
 // with the implementation.
-#pragma warning disable CS0169, CS0649
 public struct AppliedTransitionBuffer : IEquatable<AppliedTransitionBuffer>
 {
     public const int Capacity = 16;
@@ -39,20 +39,106 @@ public struct AppliedTransitionBuffer : IEquatable<AppliedTransitionBuffer>
     }
 
     public int Count => _count;
-    public MovementTransitionKindTag this[int index] => throw new NotImplementedException();
-    public bool TryAdd(MovementTransitionKindTag tag) => throw new NotImplementedException();
-    public int CopyTo(Span<MovementTransitionKindTag> destination) =>
-        throw new NotImplementedException();
-    public void Clear() => throw new NotImplementedException();
-    public bool Equals(AppliedTransitionBuffer other) => throw new NotImplementedException();
-    public override bool Equals(object? obj) => throw new NotImplementedException();
-    public override int GetHashCode() => throw new NotImplementedException();
+    public bool IsFull => _count >= Capacity;
+
+    public MovementTransitionKindTag this[int index] => (uint)index < (uint)_count
+        ? _tags[index]
+        : throw new ArgumentOutOfRangeException(nameof(index));
+
+    /// <returns>
+    /// False when full. A frame cannot legitimately apply more transitions than a
+    /// command could reference, so a refusal here means a caller bug rather than a
+    /// busy frame, and dropping silently would make replay apply a different edge
+    /// set than the first run.
+    /// </returns>
+    public bool TryAdd(MovementTransitionKindTag tag)
+    {
+        if (!Enum.IsDefined(tag))
+        {
+            throw new ArgumentOutOfRangeException(nameof(tag));
+        }
+
+        if (IsFull)
+        {
+            return false;
+        }
+
+        _tags[_count++] = tag;
+        return true;
+    }
+
+    public int CopyTo(Span<MovementTransitionKindTag> destination)
+    {
+        if (destination.Length < _count)
+        {
+            throw new ArgumentException(
+                $"The destination needs room for {_count} transitions.",
+                nameof(destination));
+        }
+
+        for (var index = 0; index < _count; index++)
+        {
+            destination[index] = _tags[index];
+        }
+
+        return _count;
+    }
+
+    public void Clear()
+    {
+        for (var index = 0; index < _count; index++)
+        {
+            _tags[index] = default;
+        }
+
+        _count = 0;
+    }
+
+    /// <remarks>
+    /// Ordered, unlike contacts. Transition order is the order the owner applied
+    /// them, it is reproduced exactly by replay feeding the same command, and the
+    /// order itself is meaningful — a jump press before a crouch press is a
+    /// different frame from the reverse.
+    /// </remarks>
+    public bool Equals(AppliedTransitionBuffer other)
+    {
+        if (_count != other._count)
+        {
+            return false;
+        }
+
+        for (var index = 0; index < _count; index++)
+        {
+            if (_tags[index] != other._tags[index])
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    public override bool Equals(object? obj) =>
+        obj is AppliedTransitionBuffer other && Equals(other);
+
+    public override int GetHashCode()
+    {
+        var hash = new HashCode();
+        hash.Add(_count);
+        for (var index = 0; index < _count; index++)
+        {
+            hash.Add((int)_tags[index]);
+        }
+
+        return hash.ToHashCode();
+    }
+
     public static bool operator ==(AppliedTransitionBuffer l, AppliedTransitionBuffer r) =>
-        throw new NotImplementedException();
+        l.Equals(r);
+
     public static bool operator !=(AppliedTransitionBuffer l, AppliedTransitionBuffer r) =>
-        throw new NotImplementedException();
+        !l.Equals(r);
 }
-#pragma warning restore CS0169, CS0649
 
 /// <summary>
 /// A deterministic simulation event a frame produced, identified stably enough
@@ -67,16 +153,76 @@ public struct AppliedTransitionBuffer : IEquatable<AppliedTransitionBuffer>
 /// </remarks>
 public readonly record struct OwnerSimulationEvent
 {
-    public OwnerSimulationEvent(ulong eventId, PredictedCueKind kind) =>
-        throw new NotImplementedException();
+    /// <summary>
+    /// Carries every field <see cref="PredictedCueIdentity"/> needs except the
+    /// epoch.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The stub review caught this holding only an id and a kind, which is two of
+    /// the five fields the ledger key requires — and the ledger throws on an
+    /// unspecified origin or a zero id. Replay would have had to invent the
+    /// missing two, which is the re-derivation this file's opening remark argues
+    /// against, and a derivation that is not bit-identical makes the ledger see a
+    /// new identity and fire the sound again. That is the ten-sounds-on-one-jump
+    /// bug the design was built to prevent.
+    /// </para>
+    /// <para>
+    /// The epoch is deliberately absent: history is bound to one epoch for its
+    /// whole life, so storing it per event would be a field that can only ever hold
+    /// one value and could drift from the container's.
+    /// </para>
+    /// </remarks>
+    public OwnerSimulationEvent(
+        PredictedCueKind kind,
+        PredictedCueOriginKind originKind,
+        ulong originId,
+        uint eventOrdinal)
+    {
+        if (kind == PredictedCueKind.Unspecified || !Enum.IsDefined(kind))
+        {
+            throw new ArgumentOutOfRangeException(nameof(kind));
+        }
 
-    public ulong EventId { get; }
+        if (originKind == PredictedCueOriginKind.Unspecified || !Enum.IsDefined(originKind))
+        {
+            throw new ArgumentOutOfRangeException(nameof(originKind));
+        }
+
+        if (originId == 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(originId));
+        }
+
+        Kind = kind;
+        OriginKind = originKind;
+        OriginId = originId;
+        EventOrdinal = eventOrdinal;
+    }
+
     public PredictedCueKind Kind { get; }
-    public bool IsValid => throw new NotImplementedException();
+    public PredictedCueOriginKind OriginKind { get; }
+    public ulong OriginId { get; }
+    public uint EventOrdinal { get; }
+
+    public bool IsValid =>
+        Kind != PredictedCueKind.Unspecified &&
+        OriginKind != PredictedCueOriginKind.Unspecified &&
+        OriginId != 0;
+
+    /// <summary>
+    /// Rebuilds the ledger key by supplying the epoch history is bound to.
+    /// </summary>
+    /// <remarks>
+    /// The whole point of storing the wider record: replay offers the ledger
+    /// exactly the identity the first run did, so a re-simulated frame's cue is
+    /// recognised as already emitted rather than as a new one.
+    /// </remarks>
+    public PredictedCueIdentity ToIdentity(CombatantAuthorityPredictionEpoch epoch) =>
+        new(epoch, Kind, OriginKind, OriginId, EventOrdinal);
 }
 
 /// <summary>Events produced by one frame. Bounded; a frame cannot emit unboundedly.</summary>
-#pragma warning disable CS0169, CS0649
 public struct OwnerSimulationEventBuffer : IEquatable<OwnerSimulationEventBuffer>
 {
     public const int Capacity = 8;
@@ -91,19 +237,77 @@ public struct OwnerSimulationEventBuffer : IEquatable<OwnerSimulationEventBuffer
     }
 
     public int Count => _count;
-    public OwnerSimulationEvent this[int index] => throw new NotImplementedException();
-    public bool TryAdd(in OwnerSimulationEvent simulationEvent) =>
-        throw new NotImplementedException();
-    public void Clear() => throw new NotImplementedException();
-    public bool Equals(OwnerSimulationEventBuffer other) => throw new NotImplementedException();
-    public override bool Equals(object? obj) => throw new NotImplementedException();
-    public override int GetHashCode() => throw new NotImplementedException();
+    public bool IsFull => _count >= Capacity;
+
+    public OwnerSimulationEvent this[int index] => (uint)index < (uint)_count
+        ? _events[index]
+        : throw new ArgumentOutOfRangeException(nameof(index));
+
+    public bool TryAdd(in OwnerSimulationEvent simulationEvent)
+    {
+        if (!simulationEvent.IsValid)
+        {
+            throw new ArgumentOutOfRangeException(nameof(simulationEvent));
+        }
+
+        if (IsFull)
+        {
+            return false;
+        }
+
+        _events[_count++] = simulationEvent;
+        return true;
+    }
+
+    public void Clear()
+    {
+        for (var index = 0; index < _count; index++)
+        {
+            _events[index] = default;
+        }
+
+        _count = 0;
+    }
+
+    public bool Equals(OwnerSimulationEventBuffer other)
+    {
+        if (_count != other._count)
+        {
+            return false;
+        }
+
+        for (var index = 0; index < _count; index++)
+        {
+            if (!_events[index].Equals(other._events[index]))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    public override bool Equals(object? obj) =>
+        obj is OwnerSimulationEventBuffer other && Equals(other);
+
+    public override int GetHashCode()
+    {
+        var hash = new HashCode();
+        hash.Add(_count);
+        for (var index = 0; index < _count; index++)
+        {
+            hash.Add(_events[index]);
+        }
+
+        return hash.ToHashCode();
+    }
+
     public static bool operator ==(OwnerSimulationEventBuffer l, OwnerSimulationEventBuffer r) =>
-        throw new NotImplementedException();
+        l.Equals(r);
+
     public static bool operator !=(OwnerSimulationEventBuffer l, OwnerSimulationEventBuffer r) =>
-        throw new NotImplementedException();
+        !l.Equals(r);
 }
-#pragma warning restore CS0169, CS0649
 
 /// <summary>
 /// Everything the owner retained about one frame it simulated locally.
@@ -136,7 +340,59 @@ public readonly record struct OwnerPredictedFrame
         CapsuleMotionOutcome motionOutcome,
         int slideIterations,
         bool profileExpansionBlocked,
-        CanonicalMovementStateHash canonicalHash) => throw new NotImplementedException();
+        CanonicalMovementStateHash canonicalHash)
+    {
+        // Four frame numbers arrive here and they must describe one frame. The stub
+        // review flagged their coherence as unstated, and it is the guard whose
+        // absence produces the failure the plan calls the worst available: a
+        // one-frame phase error anywhere in this path reads as a divergence on
+        // EVERY frame and corrects the player continuously, which is
+        // indistinguishable from a tolerance set too tight. P5B-02 measured the two
+        // motors exactly one frame out of phase, so this is a live hazard rather
+        // than a theoretical one.
+        if (postState.Frame != frame)
+        {
+            throw new ArgumentException(
+                $"The post-state is for frame {postState.Frame.Tick}, not {frame.Tick}.",
+                nameof(postState));
+        }
+
+        if (preState.Frame.Tick != frame.Tick - 1)
+        {
+            throw new ArgumentException(
+                $"The pre-state is for frame {preState.Frame.Tick}, which does not immediately " +
+                $"precede {frame.Tick}.",
+                nameof(preState));
+        }
+
+        if (command.TargetFrame != frame)
+        {
+            throw new ArgumentException(
+                $"The command targets frame {command.TargetFrame.Tick}, not {frame.Tick}.",
+                nameof(command));
+        }
+
+        if (!Enum.IsDefined(motionOutcome))
+        {
+            throw new ArgumentOutOfRangeException(nameof(motionOutcome));
+        }
+
+        if (slideIterations < 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(slideIterations));
+        }
+
+        Frame = frame;
+        PreState = preState;
+        PostState = postState;
+        Command = command;
+        AppliedTransitions = appliedTransitions;
+        Events = events;
+        MotionOutcome = motionOutcome;
+        SlideIterations = slideIterations;
+        ProfileExpansionBlocked = profileExpansionBlocked;
+        CanonicalHash = canonicalHash;
+    }
 
     public SimulationInstant Frame { get; }
 
@@ -172,7 +428,10 @@ public readonly record struct OwnerPredictedFrame
     /// </summary>
     public CanonicalMovementStateHash CanonicalHash { get; }
 
-    public bool IsValid => throw new NotImplementedException();
+    public bool IsValid =>
+        PostState.Frame == Frame &&
+        PreState.Frame.Tick == Frame.Tick - 1 &&
+        Command.TargetFrame == Frame;
 
     /// <summary>Replaces the post-state after replay resimulated this frame.</summary>
     /// <remarks>
@@ -182,7 +441,17 @@ public readonly record struct OwnerPredictedFrame
     /// </remarks>
     public OwnerPredictedFrame WithPostState(
         CharacterSimulationState postState,
-        CanonicalMovementStateHash hash) => throw new NotImplementedException();
+        CanonicalMovementStateHash hash) => new(
+            Frame,
+            PreState,
+            postState,
+            Command,
+            AppliedTransitions,
+            Events,
+            MotionOutcome,
+            SlideIterations,
+            ProfileExpansionBlocked,
+            hash);
 }
 
 public enum OwnerHistoryInsertDecision : byte
@@ -245,31 +514,132 @@ public sealed class OwnerPredictionHistory
     public const int DefaultCapacityFrames = 256;
     public const int MaximumCapacityFrames = 1024;
 
+    private readonly OwnerPredictedFrame[] _frames;
+    private long _oldestTick;
+    private long _newestTick;
+    private int _count;
+
     public OwnerPredictionHistory(
         CombatantAuthorityPredictionEpoch epoch,
-        int capacityFrames = DefaultCapacityFrames) => throw new NotImplementedException();
+        int capacityFrames = DefaultCapacityFrames)
+    {
+        if (!epoch.IsValid)
+        {
+            throw new ArgumentOutOfRangeException(nameof(epoch));
+        }
 
-    public CombatantAuthorityPredictionEpoch Epoch => throw new NotImplementedException();
-    public int CapacityFrames => throw new NotImplementedException();
-    public int Count => throw new NotImplementedException();
+        if (capacityFrames is < 1 or > MaximumCapacityFrames)
+        {
+            throw new ArgumentOutOfRangeException(nameof(capacityFrames));
+        }
+
+        Epoch = epoch;
+        _frames = new OwnerPredictedFrame[capacityFrames];
+    }
+
+    public CombatantAuthorityPredictionEpoch Epoch { get; private set; }
+    public int CapacityFrames => _frames.Length;
+    public int Count => _count;
 
     /// <summary>Oldest frame still replayable, or null when empty.</summary>
-    public SimulationInstant? OldestFrame => throw new NotImplementedException();
+    public SimulationInstant? OldestFrame =>
+        _count == 0 ? null : new SimulationInstant(_oldestTick);
 
     /// <summary>Newest frame simulated, or null when empty.</summary>
-    public SimulationInstant? NewestFrame => throw new NotImplementedException();
+    public SimulationInstant? NewestFrame =>
+        _count == 0 ? null : new SimulationInstant(_newestTick);
 
     /// <summary>
     /// Records one simulated frame. Refuses rather than accepts a gap, because a
     /// gap in history is indistinguishable later from a frame that simulated
     /// differently.
     /// </summary>
-    public OwnerHistoryInsertDecision TryInsert(in OwnerPredictedFrame frame) =>
-        throw new NotImplementedException();
+    public OwnerHistoryInsertDecision TryInsert(in OwnerPredictedFrame frame)
+    {
+        if (!frame.IsValid)
+        {
+            throw new ArgumentException(
+                "A retained frame must be internally coherent about which frame it is.",
+                nameof(frame));
+        }
+
+        var tick = frame.Frame.Tick;
+        if (_count == 0)
+        {
+            _frames[Index(tick)] = frame;
+            _oldestTick = tick;
+            _newestTick = tick;
+            _count = 1;
+            return OwnerHistoryInsertDecision.Inserted;
+        }
+
+        // Re-inserting the newest frame, or any retained frame, is not a gap — but
+        // it is also not an insert. Callers replacing a replayed frame must go
+        // through TryReplacePostState, which keeps the command and transitions the
+        // first run consumed.
+        if (tick <= _newestTick)
+        {
+            return tick < _oldestTick
+                ? OwnerHistoryInsertDecision.OlderThanRetention
+                : OwnerHistoryInsertDecision.NonContiguous;
+        }
+
+        if (tick != _newestTick + 1)
+        {
+            return OwnerHistoryInsertDecision.NonContiguous;
+        }
+
+        _frames[Index(tick)] = frame;
+        _newestTick = tick;
+        if (_count == _frames.Length)
+        {
+            // The window slides. The evicted frame can no longer be replayed from,
+            // which is what turns a late authority answer into a hard rebase.
+            _oldestTick++;
+        }
+        else
+        {
+            _count++;
+        }
+
+        return OwnerHistoryInsertDecision.Inserted;
+    }
 
     public OwnerHistoryLookupDecision TryGet(
         SimulationInstant frame,
-        out OwnerPredictedFrame predicted) => throw new NotImplementedException();
+        out OwnerPredictedFrame predicted)
+    {
+        predicted = default;
+        if (_count == 0)
+        {
+            return OwnerHistoryLookupDecision.Empty;
+        }
+
+        var tick = frame.Tick;
+        if (tick > _newestTick)
+        {
+            return OwnerHistoryLookupDecision.NotYetSimulated;
+        }
+
+        if (tick < _oldestTick)
+        {
+            return OwnerHistoryLookupDecision.OlderThanRetention;
+        }
+
+        predicted = _frames[Index(tick)];
+        return OwnerHistoryLookupDecision.Found;
+    }
+
+    /// <summary>
+    /// Frame number to ring slot.
+    /// </summary>
+    /// <remarks>
+    /// Frame-indexed rather than searched, so a lookup is constant time regardless
+    /// of window size. The modulo is taken on a non-negative value because
+    /// simulation ticks are non-negative; C# remainder of a negative would index
+    /// backwards and silently return a different frame.
+    /// </remarks>
+    private int Index(long tick) => (int)((ulong)tick % (ulong)_frames.Length);
 
     /// <summary>
     /// Replaces a frame's post-state after replay resimulated it.
@@ -282,7 +652,24 @@ public sealed class OwnerPredictionHistory
     public bool TryReplacePostState(
         SimulationInstant frame,
         in CharacterSimulationState postState,
-        CanonicalMovementStateHash hash) => throw new NotImplementedException();
+        CanonicalMovementStateHash hash)
+    {
+        if (TryGet(frame, out var existing) != OwnerHistoryLookupDecision.Found)
+        {
+            return false;
+        }
+
+        if (postState.Frame != frame)
+        {
+            throw new ArgumentException(
+                $"A replayed post-state for frame {frame.Tick} carries frame " +
+                $"{postState.Frame.Tick}.",
+                nameof(postState));
+        }
+
+        _frames[Index(frame.Tick)] = existing.WithPostState(postState, hash);
+        return true;
+    }
 
     /// <summary>
     /// Drops every frame at or below <paramref name="throughFrame"/>.
@@ -292,15 +679,57 @@ public sealed class OwnerPredictionHistory
     /// rather than only on overflow is what keeps the window available for the
     /// frames that might still need replaying.
     /// </remarks>
-    public int PruneThrough(SimulationInstant throughFrame) =>
-        throw new NotImplementedException();
+    public int PruneThrough(SimulationInstant throughFrame)
+    {
+        if (_count == 0 || throughFrame.Tick < _oldestTick)
+        {
+            return 0;
+        }
+
+        if (throughFrame.Tick >= _newestTick)
+        {
+            var all = _count;
+            _count = 0;
+            return all;
+        }
+
+        var dropped = (int)(throughFrame.Tick - _oldestTick + 1);
+        _oldestTick = throughFrame.Tick + 1;
+        _count -= dropped;
+        return dropped;
+    }
 
     /// <summary>
-    /// Discards frames after <paramref name="fromFrame"/> so replay can rewrite
-    /// them.
+    /// Discards frames after <paramref name="fromFrame"/>.
     /// </summary>
-    public int TruncateAfter(SimulationInstant fromFrame) =>
-        throw new NotImplementedException();
+    /// <remarks>
+    /// <b>For the rebase path only — never for replay.</b> The frames after the
+    /// restore point are the only place the commands and applied transitions live,
+    /// so truncating them deletes exactly what replay is about to read. Replay
+    /// rewrites in place through <see cref="TryReplacePostState"/> instead. An
+    /// earlier version of the controller's documentation recommended truncating
+    /// here, which the stub review caught as a data-loss bug the comment actively
+    /// advocated.
+    /// </remarks>
+    public int TruncateAfter(SimulationInstant fromFrame)
+    {
+        if (_count == 0 || fromFrame.Tick >= _newestTick)
+        {
+            return 0;
+        }
+
+        if (fromFrame.Tick < _oldestTick)
+        {
+            var all = _count;
+            _count = 0;
+            return all;
+        }
+
+        var dropped = (int)(_newestTick - fromFrame.Tick);
+        _newestTick = fromFrame.Tick;
+        _count -= dropped;
+        return dropped;
+    }
 
     /// <summary>
     /// Clears everything and rebinds to a new epoch.
@@ -310,6 +739,20 @@ public sealed class OwnerPredictionHistory
     /// reused and the scope the commands belonged to is gone. Keeping any of it
     /// would let a frame from the old timeline be replayed into the new one.
     /// </remarks>
-    public void Reset(CombatantAuthorityPredictionEpoch epoch) =>
-        throw new NotImplementedException();
+    public void Reset(CombatantAuthorityPredictionEpoch epoch)
+    {
+        if (!epoch.IsValid)
+        {
+            throw new ArgumentOutOfRangeException(nameof(epoch));
+        }
+
+        // Slots are cleared rather than only the count, so a stale frame cannot be
+        // resurrected by a later insert landing on the same ring slot before the
+        // window has moved past it.
+        Array.Clear(_frames);
+        Epoch = epoch;
+        _oldestTick = 0;
+        _newestTick = 0;
+        _count = 0;
+    }
 }

@@ -34,12 +34,32 @@ public readonly record struct CanonicalMovementStateHash
     /// <summary>Upper bound on the canonical encoding, so a caller can size a buffer.</summary>
     public const int MaximumCanonicalBytes = 256;
 
-    public CanonicalMovementStateHash(uint schemaVersion, ulong value) =>
-        throw new NotImplementedException();
+    /// <summary>
+    /// Quantization step for positions and velocities, in metres or metres/second.
+    /// </summary>
+    /// <remarks>
+    /// A millimetre. Hashing raw doubles would make the hash differ whenever the
+    /// last bit of arithmetic differed, which is every frame between two machines
+    /// — so a raw hash would report a mismatch continuously and mean nothing.
+    /// Quantizing makes agreement possible while staying far finer than any
+    /// correction tolerance, so a real divergence still changes the value.
+    /// </remarks>
+    public const double QuantizationStep = 1e-3d;
+
+    public CanonicalMovementStateHash(uint schemaVersion, ulong value)
+    {
+        Schema = schemaVersion;
+        Value = value;
+    }
 
     public uint Schema { get; }
     public ulong Value { get; }
-    public bool IsValid => throw new NotImplementedException();
+
+    /// <remarks>
+    /// A default hash is not valid, so an unset field cannot be mistaken for a
+    /// computed one that happened to be zero.
+    /// </remarks>
+    public bool IsValid => Schema != 0;
 
     /// <summary>
     /// Hashes the prediction-relevant fields of a state, in fixed order.
@@ -53,7 +73,20 @@ public readonly record struct CanonicalMovementStateHash
     /// </param>
     public static CanonicalMovementStateHash Compute(
         in CharacterSimulationState state,
-        in CombatantAuthorityPredictionEpoch epoch) => throw new NotImplementedException();
+        in CombatantAuthorityPredictionEpoch epoch)
+    {
+        Span<byte> canonical = stackalloc byte[MaximumCanonicalBytes];
+        var written = WriteCanonicalBytes(state, epoch, canonical);
+
+        var hash = 14695981039346656037UL;
+        foreach (var value in canonical[..written])
+        {
+            hash ^= value;
+            hash *= 1099511628211UL;
+        }
+
+        return new CanonicalMovementStateHash(SchemaVersion, hash);
+    }
 
     /// <summary>
     /// Writes the canonical byte encoding a hash is taken over.
@@ -66,7 +99,102 @@ public readonly record struct CanonicalMovementStateHash
     public static int WriteCanonicalBytes(
         in CharacterSimulationState state,
         in CombatantAuthorityPredictionEpoch epoch,
-        Span<byte> destination) => throw new NotImplementedException();
+        Span<byte> destination)
+    {
+        if (destination.Length < MaximumCanonicalBytes)
+        {
+            throw new ArgumentException(
+                $"The canonical encoding needs {MaximumCanonicalBytes} bytes.",
+                nameof(destination));
+        }
+
+        var offset = 0;
+
+        // Schema first, so a version change alters every hash rather than only
+        // those whose fields happened to move.
+        WriteUInt32(destination, ref offset, SchemaVersion);
+
+        // Epoch. Included because two states can be numerically identical and still
+        // belong to different lives or timelines, and comparing those is meaningless.
+        WriteUInt64(destination, ref offset, epoch.MatchFrameEpoch.Value);
+        WriteInt64(destination, ref offset, epoch.Life.Value);
+        WriteUInt64(destination, ref offset, epoch.AuthorityDiscontinuity.Value);
+        WriteUInt64(destination, ref offset, epoch.OwnerControl.Value);
+
+        WriteInt64(destination, ref offset, state.Frame.Tick);
+
+        var kinematic = state.Kinematic;
+        WriteQuantized(destination, ref offset, kinematic.Position.X);
+        WriteQuantized(destination, ref offset, kinematic.Position.Y);
+        WriteQuantized(destination, ref offset, kinematic.Position.Z);
+        WriteQuantized(destination, ref offset, kinematic.HorizontalVelocity.X);
+        WriteQuantized(destination, ref offset, kinematic.HorizontalVelocity.Z);
+        WriteQuantized(destination, ref offset, kinematic.VerticalVelocity);
+
+        destination[offset++] = kinematic.IsGrounded ? (byte)1 : (byte)0;
+        WriteUInt64(destination, ref offset, kinematic.Support.ColliderId);
+        WriteInt32(destination, ref offset, kinematic.Support.ShapeIndex);
+
+        destination[offset++] = (byte)state.LocomotionMode;
+        destination[offset++] = (byte)state.PostureMode;
+        destination[offset++] = (byte)state.JumpPhase;
+        destination[offset++] = (byte)state.Profile.Current;
+
+        // Contacts in canonical order, never storage order. The buffer's own
+        // equality is positional and its order is the motor's insertion order, so
+        // hashing as stored would make two endpoints that agree about a corner
+        // report different hashes — which the comparer classifies as
+        // DiagnosticHashOnly and documents as "a bug to investigate". P06-12 would
+        // spend its first week investigating a non-bug on every corner frame.
+        Span<FrameContactRecord> contacts = stackalloc FrameContactRecord[FrameContactBuffer.Capacity];
+        var contactCount = state.Contacts.CopyCanonical(contacts);
+        destination[offset++] = (byte)contactCount;
+        for (var index = 0; index < contactCount; index++)
+        {
+            var contact = contacts[index];
+            WriteUInt64(destination, ref offset, contact.Collider.ColliderId);
+            WriteInt32(destination, ref offset, contact.Collider.ShapeIndex);
+            destination[offset++] = (byte)contact.SurfaceKind;
+        }
+
+        return offset;
+    }
+
+    private static void WriteQuantized(Span<byte> destination, ref int offset, double value)
+    {
+        // Away-from-zero rounding so the quantization is symmetric: banker's
+        // rounding would map +0.0005 and -0.0005 to different magnitudes and make
+        // the encoding depend on which side of the origin a character stood.
+        var quantized = double.IsFinite(value)
+            ? (long)Math.Round(value / QuantizationStep, MidpointRounding.AwayFromZero)
+            : long.MinValue;
+        WriteInt64(destination, ref offset, quantized);
+    }
+
+    private static void WriteInt64(Span<byte> destination, ref int offset, long value) =>
+        WriteUInt64(destination, ref offset, unchecked((ulong)value));
+
+    private static void WriteUInt64(Span<byte> destination, ref int offset, ulong value)
+    {
+        // Little-endian explicitly, not BitConverter, so the encoding does not
+        // depend on the machine's endianness. Two endpoints on different
+        // architectures must produce identical bytes or the hash compares nothing.
+        for (var shift = 0; shift < 64; shift += 8)
+        {
+            destination[offset++] = (byte)(value >> shift);
+        }
+    }
+
+    private static void WriteInt32(Span<byte> destination, ref int offset, int value) =>
+        WriteUInt32(destination, ref offset, unchecked((uint)value));
+
+    private static void WriteUInt32(Span<byte> destination, ref int offset, uint value)
+    {
+        for (var shift = 0; shift < 32; shift += 8)
+        {
+            destination[offset++] = (byte)(value >> shift);
+        }
+    }
 }
 
 /// <summary>Which class of difference the comparer found.</summary>
