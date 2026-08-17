@@ -451,6 +451,12 @@ public sealed class OwnerCorrectionTelemetryTests
                     Comparison,
                     RebaseDelta(),
                     OwnerMismatchField.HorizontalPosition),
+            OwnerCorrectionReason.ReplayDepthExceeded =>
+                OwnerCorrectionTelemetry.Create(
+                    reason,
+                    Comparison,
+                    RebaseDelta(),
+                    OwnerMismatchField.HorizontalPosition),
             _ => throw new ArgumentOutOfRangeException(nameof(reason), reason, null),
         };
 
@@ -476,7 +482,8 @@ public sealed class OwnerCorrectionTelemetryTests
             OwnerCorrectionReason.OwnerControlEpochChanged or
             OwnerCorrectionReason.ConfigurationHistoryPolicyExhausted or
             OwnerCorrectionReason.UnrecoverablePenetration or
-            OwnerCorrectionReason.ExtremeError => OwnerCorrectionDisposition.HardRebase,
+            OwnerCorrectionReason.ExtremeError or
+            OwnerCorrectionReason.ReplayDepthExceeded => OwnerCorrectionDisposition.HardRebase,
             _ => throw new ArgumentOutOfRangeException(nameof(reason), reason, null),
         };
 

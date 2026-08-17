@@ -29,6 +29,29 @@ public enum OwnerCorrectionReason
     ConfigurationHistoryPolicyExhausted = 8,
     UnrecoverablePenetration = 9,
     ExtremeError = 10,
+
+    /// <summary>
+    /// P06-A4: the owner and authority disagreed, the difference was ordinary, but
+    /// the frame was too far back to replay within
+    /// <c>OwnerPredictionWorkPolicy.MaximumReplayFrames</c>.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Distinct from every existing reason, and none of them can stand in.
+    /// <see cref="HistoryMiss"/> is wrong because history <em>had</em> the frame and
+    /// a comparison happened; <see cref="ExtremeError"/> is wrong because the
+    /// difference may be two centimetres and calling that extreme puts a false
+    /// statement in the trace. Without this value the most common correction at
+    /// real latency has no honest name, and the telemetry factories would throw on
+    /// it either way.
+    /// </para>
+    /// <para>
+    /// Also the signal that the replay budget is mis-tuned rather than that the
+    /// network is bad: a rising rate here means the depth cap is below the
+    /// prediction lead, which is what P06-A3 exists to retire.
+    /// </para>
+    /// </remarks>
+    ReplayDepthExceeded = 11,
 }
 
 /// <summary>
@@ -287,6 +310,18 @@ public readonly record struct OwnerCorrectionTelemetry
                     authorityFrameErrorBefore!.Value,
                     appliedCorrection);
                 break;
+            case OwnerCorrectionReason.ReplayDepthExceeded:
+                // A comparison happened and named a field, so this is not a
+                // HistoryMiss. But deliberately NOT RequireNonZeroComparison: the
+                // difference may be two centimetres, and that is exactly the case
+                // — small error, frame too old to replay. Demanding a large error
+                // here is what made ExtremeError unusable as a stand-in.
+                RequireComparison(authorityFrameErrorBefore);
+                RequireNonEmptyMismatch(firstMismatch);
+                RequireRebaseTargetsComparison(
+                    authorityFrameErrorBefore!.Value,
+                    appliedCorrection);
+                break;
             default:
                 throw new ArgumentOutOfRangeException(
                     nameof(reason),
@@ -311,7 +346,8 @@ public readonly record struct OwnerCorrectionTelemetry
             OwnerCorrectionReason.OwnerControlEpochChanged or
             OwnerCorrectionReason.ConfigurationHistoryPolicyExhausted or
             OwnerCorrectionReason.UnrecoverablePenetration or
-            OwnerCorrectionReason.ExtremeError => OwnerCorrectionDisposition.HardRebase,
+            OwnerCorrectionReason.ExtremeError or
+            OwnerCorrectionReason.ReplayDepthExceeded => OwnerCorrectionDisposition.HardRebase,
             _ => throw new ArgumentOutOfRangeException(
                 nameof(reason),
                 reason,

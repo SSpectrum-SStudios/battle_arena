@@ -170,6 +170,7 @@ public static class PredictionTraceFormatter
                 "configuration_history_policy_exhausted",
             OwnerCorrectionReason.UnrecoverablePenetration => "unrecoverable_penetration",
             OwnerCorrectionReason.ExtremeError => "extreme_error",
+            OwnerCorrectionReason.ReplayDepthExceeded => "replay_depth_exceeded",
             _ => throw new ArgumentOutOfRangeException(
                 nameof(reason),
                 reason,

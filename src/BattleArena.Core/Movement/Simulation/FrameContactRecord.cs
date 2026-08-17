@@ -142,6 +142,48 @@ public struct FrameContactBuffer : IEquatable<FrameContactBuffer>
         _count = 0;
     }
 
+    /// <summary>
+    /// P06-A2: whether two buffers hold the same contacts, ignoring insertion
+    /// order.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <see cref="Equals(FrameContactBuffer)"/> is a positional walk and
+    /// <see cref="GetHashCode"/> folds in order, so this cannot be expressed by
+    /// equality — and the record structs that contain this buffer inherit that
+    /// positional equality too.
+    /// </para>
+    /// <para>
+    /// Needed because contact order is not a reliable cross-endpoint fact. It will
+    /// become one once <see cref="StaticCollisionWorld"/> supplies genuine
+    /// per-contact travel fractions and visits geometry in identity order, but
+    /// comparison must not depend on that having landed: an ordering difference is
+    /// not a simulation disagreement, and reporting one as a divergence would
+    /// correct the player for nothing.
+    /// </para>
+    /// <para>
+    /// A nested scan rather than a set, because <see cref="Capacity"/> is 4 and this
+    /// runs on an allocation-free path where a HashSet would allocate per compared
+    /// frame.
+    /// </para>
+    /// </remarks>
+    public bool DescribesSameContacts(in FrameContactBuffer other) =>
+        throw new NotImplementedException();
+
+    /// <summary>
+    /// P06-A2: contacts in a canonical order that is a pure function of content.
+    /// </summary>
+    /// <remarks>
+    /// For hashing. <c>CanonicalMovementStateHash</c> must fold contacts in an
+    /// order both endpoints agree on, or two endpoints that agree about a corner
+    /// report different hashes — which the comparer classifies as
+    /// <c>DiagnosticHashOnly</c>, documented as "a bug to investigate". P06-12
+    /// would spend its first week investigating a non-bug on every corner frame.
+    /// </remarks>
+    /// <returns>How many were written.</returns>
+    public int CopyCanonical(Span<FrameContactRecord> destination) =>
+        throw new NotImplementedException();
+
     /// <summary>Whether any retained contact is on the given collider.</summary>
     public bool Touches(SupportIdentity collider)
     {

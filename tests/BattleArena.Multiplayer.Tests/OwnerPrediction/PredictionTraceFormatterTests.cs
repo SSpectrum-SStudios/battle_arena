@@ -431,6 +431,8 @@ public sealed class PredictionTraceFormatterTests
                 CreateComparisonRebase(reason, OwnerMismatchField.Contact),
             OwnerCorrectionReason.ExtremeError =>
                 CreateComparisonRebase(reason, OwnerMismatchField.HorizontalPosition),
+            OwnerCorrectionReason.ReplayDepthExceeded =>
+                CreateComparisonRebase(reason, OwnerMismatchField.HorizontalPosition),
             _ => throw new ArgumentOutOfRangeException(nameof(reason), reason, null),
         };
 
@@ -537,6 +539,7 @@ public sealed class PredictionTraceFormatterTests
                 "configuration_history_policy_exhausted",
             OwnerCorrectionReason.UnrecoverablePenetration => "unrecoverable_penetration",
             OwnerCorrectionReason.ExtremeError => "extreme_error",
+            OwnerCorrectionReason.ReplayDepthExceeded => "replay_depth_exceeded",
             _ => throw new ArgumentOutOfRangeException(nameof(reason), reason, null),
         };
 

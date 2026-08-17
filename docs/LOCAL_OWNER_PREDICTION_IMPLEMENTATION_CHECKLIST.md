@@ -2070,6 +2070,246 @@ capsule radius can no longer be stepped onto. Neither blocks reconciliation, but
 both are motor behaviour that a trace comparison will faithfully reproduce, so
 they must not be mistaken for reconciliation defects.
 
+### Phase 6 revision: Phase 6A foundations
+
+Phase 6 as originally planned cannot deliver what it promises. Two independent
+blockers — cross-process collider identity and the replay-budget conflict — turn
+out to have the same answer, and it is an architectural one, so it belongs in a
+small foundations unit ahead of the reconciliation loop. Phase 6 is therefore
+split: **6A** below, then **6B** for the existing P06-01..12.
+
+#### The research that decided it (P06-A3)
+
+The question was whether replay can cover the prediction lead, or whether the
+design must degrade to rebasing at real latency. Rocket League was the reference,
+and it reframes the problem rather than answering it as posed.
+
+Established: Rocket League runs physics at **120 Hz on both client and server**
+(server sending at ~60 Hz), uses **Bullet inside UE3 specifically to get
+deterministic networked physics**, and predicts **not only the local car but all
+cars and the fully physical ball — resimulating the entire physics scene**. For
+remote players it applies **input decay**, using full input on the first predicted
+frame then roughly 66%, 33%, and none, because that reads better than overshooting
+and rubber-banding back. Physics is single-threaded.
+
+Not established, and deliberately not assumed: whether they cap the rollback
+window, and whether corrections snap or blend. The GDC PDF would not parse and the
+practitioner thread is behind a 403.
+
+**The decision rests on P5B-03's measurement, not on the Rocket League
+comparison.** The stub review was right to push on this and the framing is
+corrected here: Rocket League runs 120 Hz *forward* simulation with input decay for
+remotes, which is prediction breadth, not 48-frame rollback per received packet. It
+also steps a whole world — one broad phase, one solver — against our per-operation
+query cost, so the two cost structures are not comparable, and the plan itself
+records that the decisive fact is unknown (whether they cap the rollback window; if
+they do, the citation argues the other way). What Rocket League genuinely
+establishes is weaker but still useful: choosing an in-process deterministic physics
+library over the host engine's own, specifically to get deterministic networked
+physics, is a shipped and successful choice rather than an exotic one.
+
+The measured argument stands on its own. **Every motor operation is a
+`PhysicsServer3D.BodyTestMotion` round trip at 25-29 microseconds**, so a 48-frame
+replay costs about 11.5 ms — consistent with extrapolating P5B-03's roughly
+240-microseconds-per-depth line — against an 87 microsecond budget. Godot exposes no
+batched motion test, so batching is unavailable.
+
+The budget math settles it. Covering the authored 48-frame lead needs
+4166.7 / 48 = **87 us per replayed frame**. At the 8 queries per frame P5B-03
+measured, that is 10.9 us per query — below even P01-11's optimistic isolated
+figure of 10.8 us. **Engine queries cannot reach the target at any useful depth.**
+In-process capsule sweeps at 1-2 us put 48 frames comfortably under 1 ms.
+
+So the answer is to stop asking the engine during simulation: own a
+capsule-accurate deterministic collision world in-process, built once from the
+static scene, and use it for live frames *and* replay so the two agree by
+construction rather than by verification.
+
+**This is also the answer to P06-A1.** A world built from the scene has
+scene-derived collider identities rather than per-process RIDs. Two independent
+blockers converging on one architecture is the strongest available signal that it
+is the right one, and it is why these are one unit.
+
+It re-points 5B's work rather than wasting it. `GodotKinematicCollisionWorld`
+stops being what simulation depends on at runtime and becomes the thing the
+in-process world is validated *against*; the P5B-01 probe becomes a geometry
+fidelity check, which is what it should have been. `DeterministicCollisionWorld`
+already proves the seam works — it is the same interface — but it is a box
+approximation and must not be promoted as-is, because 5B showed exactly where box
+and capsule disagree.
+
+#### Phase 6A subsections
+
+- [ ] **P06-A1 — In-process deterministic static collision world.**
+  - Status: **Planned**.
+  - Purpose: the shared answer to identity and cost. A capsule-accurate,
+    engine-free collision world built once from authored static geometry, with
+    scene-derived collider identities that are byte-identical in every process.
+  - Target files: `StaticCollisionWorld.cs`, `StaticCollisionGeometry.cs`,
+    `SceneColliderIdentity.cs` (Core); a Godot-side builder that walks the scene
+    and emits the geometry; `CharacterCollisionContracts.cs` for identity
+    semantics.
+  - Verification: capsule sweeps agree with `GodotKinematicCollisionWorld` on the
+    arena's geometry inside an authored tolerance, including the step-edge case
+    5B found; identity for the same collider is equal across two processes; a
+    per-query cost gate under 3 us; allocation-free steady state.
+  - Note: this supersedes the "exclude Support and Contacts from cross-process
+    comparison" fallback the stub review floated. That fallback would have gutted
+    P06-04's `ContactReplay` and the grounding diagnosis story.
+
+- [ ] **P06-A2 — Canonical contact ordering in the rewind unit.**
+  - Status: **Planned**.
+  - Purpose: `FrameContactBuffer.Equals` is positional and `GetHashCode` folds in
+    order, so `CharacterSimulationState`'s record equality and any canonical hash
+    inherit order-sensitivity — while the order itself was RID-derived. Two
+    endpoints agreeing about a corner would report different hashes, which the
+    comparer classifies as "a bug to investigate".
+  - Target files: `FrameContactRecord.cs`, `CollisionContactState.cs`.
+  - Verification: buffers holding the same contacts in any insertion order are
+    equal and hash equally; ordering is a pure function of content; must precede
+    P06-02.
+
+- [ ] **P06-A3 — Replay the full prediction lead, and prove it.**
+  - Status: **Planned**.
+  - Purpose: retire the lead-versus-depth conflict rather than managing it. With
+    A1 in place the cap is raised from 8 toward the authored lead, justified by
+    measurement rather than by choosing a smaller number.
+  - Target files: `LocalMovementPredictionController.cs`
+    (`OwnerPredictionWorkPolicy`), `MovementMotorCostProbe.cs`,
+    `run_movement_motor_cost.ps1`.
+  - Verification: the cost probe measures depths up to the authored maximum lead
+    against the in-process world and reports where the budget is crossed; the
+    supported cap is derived from that curve; the probe fails if the constant and
+    the measurement disagree in either direction. If the full lead still does not
+    fit, that is recorded as a measured limit with the rebase-plus-smoothing
+    fallback named — but it is no longer assumed in advance.
+  - Deferred deliberately to Phase 9: **input decay for remote players.** Queries
+    are masked to static geometry today, so remote players are absent from replay
+    entirely and there is nothing yet to decay. Recorded here because it is the
+    Rocket League technique that belongs with frame-aligned player collision, and
+    because inventing it earlier would be building for a system that does not
+    exist.
+
+- [ ] **P06-A4 — Depth-exceeded and configuration-exhausted correction outcomes.**
+  - Status: **Planned**.
+  - Purpose: even with A3, both remain reachable, and neither is representable
+    today. There is no `OwnerCorrectionReason` for "small difference, too old to
+    replay"; `OwnerCorrectionTelemetry.Create` throws either way because
+    `HistoryMiss` requires no comparison and `ExtremeError` requires a large one;
+    and `Decide` stamps `OrdinaryReplay` before the span is known.
+  - Target files: `OwnerCorrectionTelemetry.cs`, `OwnerReconciliation.cs`.
+  - Verification: each outcome has one enumerated reason, a telemetry factory
+    that accepts a comparison having happened, and a decision made with the
+    replay span in hand so the recorded action matches what occurred.
+
+#### Stub review of 6A: three blockers, and A1's shape needs redesigning
+
+Corrected already: the identity rule now keys on the **owning body's** path plus a
+shape ordinal (the shape nodes have no authored names — `MovementTestCourse` adds
+them as unnamed children, so Godot assigns `@CollisionShape3D@<counter>`, which is
+the same process-local ordering this subsection exists to escape; a walker's natural
+`shapeNode.GetPath()` would have passed every single-process test and failed across
+processes); the ordinal is kept out of the identity hash so `ExcludedCollider` keeps
+excluding a body rather than one shape; `StaticCollisionWorld` no longer holds the
+profile table, because rebuilding the world on a revision change is precisely how a
+replayed frame gets swept with the wrong capsule — dimensions travel with the
+request, the rule `WalkableSlopeRadians` already follows; and the Rocket League
+framing is corrected to say the decision rests on P5B-03's measurement.
+
+**Still open, and A1 must not be implemented until these are settled:**
+
+1. **BLOCKER — the yaw-only parametric shape cannot represent this arena.**
+   `MovementTestCourse` authors `StairTraversalRamp` and `StairRampDown` as boxes
+   pitched about **X** (15.4 and -14 degrees), and the first is the *only* collision
+   surface for the entire stairs station. Neither is a wedge: a pitched slab's top
+   face is a full offset rectangle, while `Wedge` as stubbed rises from zero. Every
+   available workaround is bad — refuse them and the stairs lose their floor, flatten
+   the pitch and A1's own fidelity gate fails, approximate as a wedge and the normal
+   is wrong, which is the error class that caused P5B-01's step defect. The
+   restriction also buys nothing: an arbitrarily oriented box's support point costs
+   the same. Direction: store each collider as its vertex or plane set plus a full
+   basis, drop `Box`/`Wedge` as distinct kinds, and keep the support function a loop
+   of dot products. The real ramps are `ConvexPolygonShape3D` with eight authored
+   vertices, so a parametric builder would have to reverse-derive a wedge from a
+   vertex list and would silently change meaning if those vertices were ever edited.
+   The builder also needs an explicit fault for an unsupported authored shape — a
+   sphere, trimesh or GridMap added later would otherwise become a hole in the floor
+   that both endpoints agree about.
+2. **BLOCKER — `ResolveOverlap`'s specified algorithm is box-only.** "Least
+   penetrated axis" was lifted from `DeterministicCollisionWorld`, where it is
+   correct because both bodies are AABBs. A capsule against a pitched slab has no
+   axes, and an axis-aligned push on the slope station shoves the character
+   vertically or laterally instead of along the slope normal — on a query that runs
+   before every sweep of every frame. Correct formulation: segment-to-convex
+   distance, `depth = radius - distance`, direction from the witness points.
+3. **BLOCKER — the "1-2 microsecond" per-query figure is an assumption dressed as a
+   derivation.** A support function is closed-form; the conservative-advancement
+   sweep built on it is an iterative root-find calling GJK per candidate per
+   iteration. A realistic first implementation is 0.5-3 microseconds per pair times
+   several candidates times the iteration count, and A1's gate asserts under 3 for
+   the whole query with no named fallback. The architecture survives anything under
+   10.9, but A3's "raise the cap toward 48" depends on this number, so the gate needs
+   a stated fallback rather than a target nobody has hit yet.
+
+**Cheaper alternatives that were not argued against, and should be:** memoizing
+sweep results across a replay (`ExplicitMotorGoldenTraceTests` documents that replay
+re-issues *identical* queries for frames whose inputs did not change, so a quantized
+origin/motion/profile key would collapse most of a deep replay's query count against
+*either* world); amortizing a deep replay across the frames before the next authority
+answer; and gating replay on measured divergence rather than on every answer. The
+in-process world is still the choice I would make, but the plan presented it as
+forced when it is a decision.
+
+**Other findings recorded:**
+- A4's new validation arm calls `RequireRebaseTargetsComparison`, which asserts the
+  correction lands on the comparison frame — up to 48 frames old, or 10 m backwards
+  at sprint speed. The existing `HistoryMiss` arm is *looser* and permits
+  rebase-then-fast-forward, so the new arm is stricter than the reason it replaces
+  and structurally forbids catch-up. Additionally `ValidateObservation` reports
+  `replayDepth = 0` for every `HardRebase`, so the reason whose stated purpose is
+  signalling a mis-tuned budget records no magnitude and A3's tuning loop gets a rate
+  without a depth.
+- **A1 has no reproducibility gate**, yet conservative advancement is exactly where
+  run-to-run non-determinism enters, and this is the world replay will use.
+  `ExplicitMotorGoldenTraceTests` — the suite whose whole purpose is catching a rule
+  that differs on a second pass — stays on `DeterministicCollisionWorld`, so after 6A
+  the determinism gate would still prove box behaviour. That is the identical
+  criticism P5B-01 levelled at the 201-test suite.
+- Unowned in 6A and will force rework: who constructs and holds the world (nothing in
+  `BattleArena.Multiplayer` constructs one today); how the two worlds coexist during
+  migration; sequencing the build after `MovementTestCourse._Ready()`; and
+  `ContentHash` disagreement having no member, handshake, or protocol field to travel
+  on despite the stub claiming it is compared at join.
+- P5B's tunings are re-baselined by this change and A1 does not name them:
+  `SurfaceSkin` and `IgnoredPenetrationDepth` are justified *solely* by the engine's
+  1 mm margin, which disappears — but both values stay load-bearing in the P5B-01
+  step fix, so the invariant becomes documented, dead, and structural, and the next
+  person to clean it up breaks stepping. `MovementMotorParityProbe` and
+  `run_movement_motor_cost.ps1` also need re-baselining and are not target files.
+- The broad-phase overflow contract is unreachable against ~23 collision-enabled
+  shapes and unreportable anyway, since `CapsuleSweepResult` has no fault channel.
+  A uniform grid plus a 64x76 ground box also means one shape is reported from many
+  cells, and de-duplicating without allocation normally needs a visited stamp, which
+  contradicts "immutable, no per-frame state".
+- A2's verification text is unmeetable as stubbed: it promises buffers equal and
+  hashing equally in any insertion order, but the stubs deliberately leave `Equals`
+  positional and add `DescribesSameContacts`/`CopyCanonical` alongside. Restate it as
+  "the canonical copy is order-independent and P06-02 must use it".
+- Correction to the earlier Phase 6 stub review: it claimed `MovementMotorCostProbe`
+  cannot see `BattleArena.Multiplayer`. It can — `Battle Arena.csproj` references
+  both projects — so the fix is to delete the probe's private `IntendedReplayDepth`
+  and read `OwnerPredictionWorkPolicy.MeasuredMaximumReplayFrames`, not to move the
+  constant into Core.
+
+#### Deferred to Phase 6B, folded into existing subsections
+
+Recorded here so they are not lost: cue identity completion (widen
+`OwnerSimulationEvent` to the ledger's five-field key and route committed events
+to the adapter) folds into P06-10; duplicate and reordered authority answers fold
+into P06-01; queued-future application folds into P06-07; frame-identity coherence
+on the write side folds into P06-01. Attack movement influence (P05-18) and the
+motor defect debt from 5B move into 6B as their own subsections.
+
 ### Stub review of the refresh: it closed one constraint of four
 
 A critic reviewed the refresh above against the stub set. Its verdict on the four
@@ -2674,5 +2914,25 @@ mistaken for regressions by a later session.
     and on rerun. That is direct evidence the family is order-dependent rather
     than cold-start-dependent, and that the set will keep growing as the suite
     does.
+  - **A fifth was found during P06-A4, and it changes this item's severity from
+    cosmetic to blocking.** Adding one value to `OwnerCorrectionReason` — which
+    adds exactly one `Theory` case, 951 tests to 952 — moved
+    `PredictionPerformanceProbeTests.MemoryLayoutMatchesStateCommandResultAndDependencyOwnership`
+    from passing to failing: `PreallocatedManagedOverheadBytes` measured 4848
+    against an asserted ceiling of 4096. Verified as ordering, not a real
+    regression: the class passes 10/10 in isolation, and stashing the change
+    restores 951/951. So the correction-reason taxonomy — a Phase 1 foundation
+    that Phases 6 through 9 all extend — **cannot currently be extended without
+    reding the build**, and the failure names a memory-layout ceiling rather than
+    anything to do with the change, which is the worst possible signal to hand
+    whoever hits it next.
+  - Recommended fix direction, from what the five members have in common: they
+    assert absolute allocation ceilings measured by observing the GC in a shared
+    process. That is not a stable measurement under xUnit's ordering. Either give
+    them a dedicated collection with a forced warm-up and no parallelism, or
+    assert deltas against a baseline captured in the same test rather than
+    absolute byte ceilings authored months earlier.
   - Verification: The full multiplayer suite passes on a cold run immediately
-    after a clean build, repeatedly, without per-test ordering assumptions.
+    after a clean build, repeatedly, without per-test ordering assumptions — and
+    specifically, adding one enumeration value to the correction taxonomy does not
+    change any allocation measurement.
