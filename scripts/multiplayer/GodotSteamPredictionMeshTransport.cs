@@ -20,9 +20,26 @@ public partial class GodotSteamPredictionMeshTransport : Node, IPredictionMeshTr
     private const int MaximumMessagesPerPoll = 256;
     private const byte MovementPacketKind = 0;
     private const byte ControlPacketKind = 1;
+
+    /// <summary>
+    /// Virtual-port offset of the movement plane relative to the control plane.
+    /// </summary>
+    /// <remarks>
+    /// Two connections per peer on adjacent ports, split by message class. The
+    /// alternative was Steam's lanes, which is the mechanism designed for exactly
+    /// this — but the GodotSteam C# binding exposes
+    /// <c>ConfigureConnectionLanes</c> without a lane index on <c>SendMessages</c>,
+    /// and the lane is assigned per message in Steamworks. Configuring lanes
+    /// through that binding would succeed, report success, and change nothing.
+    /// Separate connections give genuinely independent reliability streams with the
+    /// API as shipped.
+    /// </remarks>
+    private const int MovementPortOffset = 1;
+
     private readonly Dictionary<SessionPeerId, RouteRuntime> _routes = [];
-    private readonly Dictionary<uint, RouteRuntime> _routesByConnection = [];
+    private readonly Dictionary<uint, ConnectionBinding> _routesByConnection = [];
     private uint _listenSocket;
+    private uint _movementListenSocket;
     private long _pollGroup;
     private PredictionRouteDescriptor? _localDescriptor;
     private bool _subscribed;
@@ -54,11 +71,17 @@ public partial class GodotSteamPredictionMeshTransport : Node, IPredictionMeshTr
             return Error.CantCreate;
         }
 
+        if (virtualPort + MovementPortOffset > 65_535)
+        {
+            return Error.InvalidParameter;
+        }
+
         _listenSocket = CreateListenSocketP2P(virtualPort);
-        if (_listenSocket == InvalidHandle)
+        _movementListenSocket = CreateListenSocketP2P(virtualPort + MovementPortOffset);
+        if (_listenSocket == InvalidHandle || _movementListenSocket == InvalidHandle)
         {
             Stop();
-            StatusChanged?.Invoke("Steam failed to create the prediction listen socket.");
+            StatusChanged?.Invoke("Steam failed to create the prediction listen sockets.");
             return Error.CantCreate;
         }
 
@@ -105,12 +128,23 @@ public partial class GodotSteamPredictionMeshTransport : Node, IPredictionMeshTr
             return;
         }
 
-        var connection = ConnectP2P(endpoint.SteamId, endpoint.VirtualPort);
-        if (connection == InvalidHandle || !Steam.SetConnectionPollGroup(connection, _pollGroup))
+        var control = ConnectP2P(endpoint.SteamId, endpoint.VirtualPort);
+        var movement = ConnectP2P(endpoint.SteamId, endpoint.VirtualPort + MovementPortOffset);
+        if (control == InvalidHandle || movement == InvalidHandle ||
+            !Steam.SetConnectionPollGroup(control, _pollGroup) ||
+            !Steam.SetConnectionPollGroup(movement, _pollGroup))
         {
-            if (connection != InvalidHandle)
+            // Either plane failing takes the whole route down. A route with only a
+            // control plane would accept commands and silently drop movement, which
+            // presents as a frozen character rather than as a transport fault.
+            if (control != InvalidHandle)
             {
-                Close(connection, "Unable to start Steam prediction route");
+                Close(control, "Unable to start Steam prediction route");
+            }
+
+            if (movement != InvalidHandle)
+            {
+                Close(movement, "Unable to start Steam prediction route");
             }
 
             _routes.Remove(runtime.RemotePeerId);
@@ -118,8 +152,10 @@ public partial class GodotSteamPredictionMeshTransport : Node, IPredictionMeshTr
             return;
         }
 
-        runtime.Connection = connection;
-        _routesByConnection[connection] = runtime;
+        runtime.ControlConnection = control;
+        runtime.MovementConnection = movement;
+        _routesByConnection[control] = new ConnectionBinding(runtime, ControlPacketKind);
+        _routesByConnection[movement] = new ConnectionBinding(runtime, MovementPacketKind);
         Report(runtime, PredictionTransportRouteState.Connecting);
     }
 
@@ -153,27 +189,34 @@ public partial class GodotSteamPredictionMeshTransport : Node, IPredictionMeshTr
             var message = value.AsGodotDictionary();
             var connection = message["connection"].AsUInt32();
             var payload = message["payload"].AsByteArray();
-            if (!_routesByConnection.TryGetValue(connection, out var runtime) || payload.Length < 2)
+            if (!_routesByConnection.TryGetValue(connection, out var binding) || payload.Length < 2)
             {
                 continue;
             }
 
-            var delivery = payload[0] switch
+            // The connection determines the class, because the connection is what
+            // actually provides the isolation. The framing byte is kept as a
+            // cross-check rather than as the source of truth: a packet arriving on
+            // the wrong plane means a routing bug, and silently reclassifying it
+            // would hide exactly the defect this split was made to prevent.
+            if (payload[0] != binding.PacketKind)
             {
-                ControlPacketKind => TransportDelivery.ReliableOrdered,
-                MovementPacketKind => TransportDelivery.Unreliable,
-                _ => (TransportDelivery?)null,
-            };
-            if (delivery is null)
-            {
+                StatusChanged?.Invoke(
+                    $"Steam prediction packet arrived on the wrong plane for peer " +
+                    $"{binding.Runtime.RemotePeerId.Value}: framed as {payload[0]} on the " +
+                    $"{binding.PacketKind} plane. Dropped.");
                 continue;
             }
+
+            var delivery = binding.PacketKind == ControlPacketKind
+                ? TransportDelivery.ReliableOrdered
+                : TransportDelivery.Unreliable;
 
             PacketReceived?.Invoke(new InboundPredictionPacket(
-                runtime.RemotePeerId,
-                runtime.RouteGeneration,
-                runtime.AttemptId,
-                delivery.Value,
+                binding.Runtime.RemotePeerId,
+                binding.Runtime.RouteGeneration,
+                binding.Runtime.AttemptId,
+                delivery,
                 payload.AsMemory(1)));
         }
     }
@@ -203,6 +246,12 @@ public partial class GodotSteamPredictionMeshTransport : Node, IPredictionMeshTr
             _listenSocket = InvalidHandle;
         }
 
+        if (_movementListenSocket != InvalidHandle)
+        {
+            Steam.CloseListenSocket(_movementListenSocket);
+            _movementListenSocket = InvalidHandle;
+        }
+
         if (_pollGroup != 0)
         {
             Steam.DestroyPollGroup(_pollGroup);
@@ -222,7 +271,18 @@ public partial class GodotSteamPredictionMeshTransport : Node, IPredictionMeshTr
     {
         if (!_routes.TryGetValue(recipient, out var runtime) ||
             runtime.RouteGeneration != routeGeneration || runtime.AttemptId != attemptId ||
-            runtime.Connection == InvalidHandle || !runtime.Connected)
+            !runtime.Connected)
+        {
+            return false;
+        }
+
+        // The plane is chosen by message class, which is the whole point: a
+        // reliable control retransmit cannot delay movement because they are not on
+        // the same connection.
+        var connection = packetKind == ControlPacketKind
+            ? runtime.ControlConnection
+            : runtime.MovementConnection;
+        if (connection == InvalidHandle)
         {
             return false;
         }
@@ -230,7 +290,7 @@ public partial class GodotSteamPredictionMeshTransport : Node, IPredictionMeshTr
         var framed = new byte[payload.Length + 1];
         framed[0] = packetKind;
         payload.Span.CopyTo(framed.AsSpan(1));
-        var result = Steam.SendMessageToConnection(runtime.Connection, framed, flags);
+        var result = Steam.SendMessageToConnection(connection, framed, flags);
         if ((ErrorResult)result["result"].AsInt32() == ErrorResult.Ok)
         {
             return true;
@@ -254,20 +314,35 @@ public partial class GodotSteamPredictionMeshTransport : Node, IPredictionMeshTr
         {
             if (_routesByConnection.TryGetValue(connection, out var initiating))
             {
-                if (remoteSteamId != 0 && remoteSteamId != initiating.Endpoint.SteamId)
+                if (remoteSteamId != 0 && remoteSteamId != initiating.Runtime.Endpoint.SteamId)
                 {
-                    Reject(initiating, connection, "Steam identity did not match authorization.");
+                    Reject(
+                        initiating.Runtime,
+                        connection,
+                        "Steam identity did not match authorization.");
                 }
                 return;
             }
 
-            if (listenSocket != _listenSocket)
+            // Which listen socket accepted the connection tells us which plane it
+            // is, so an inbound movement connection cannot be mistaken for a control
+            // one.
+            byte inboundKind;
+            if (listenSocket == _listenSocket)
+            {
+                inboundKind = ControlPacketKind;
+            }
+            else if (listenSocket == _movementListenSocket)
+            {
+                inboundKind = MovementPacketKind;
+            }
+            else
             {
                 return;
             }
 
             var candidates = _routes.Values.Where(candidate =>
-                    candidate.Connection == InvalidHandle &&
+                    candidate.ConnectionFor(inboundKind) == InvalidHandle &&
                     candidate.Endpoint.SteamId == remoteSteamId)
                 .Take(2)
                 .ToArray();
@@ -286,17 +361,18 @@ public partial class GodotSteamPredictionMeshTransport : Node, IPredictionMeshTr
                 return;
             }
 
-            runtime.Connection = connection;
-            _routesByConnection[connection] = runtime;
+            runtime.SetConnection(inboundKind, connection);
+            _routesByConnection[connection] = new ConnectionBinding(runtime, inboundKind);
         }
 
         if (state == Steam.NetworkingConnectionState.Connected)
         {
-            if (!_routesByConnection.TryGetValue(connection, out var runtime))
+            if (!_routesByConnection.TryGetValue(connection, out var binding))
             {
                 return;
             }
 
+            var runtime = binding.Runtime;
             if (remoteSteamId != runtime.Endpoint.SteamId ||
                 MayAcceptSteamPeer?.Invoke(remoteSteamId) != true)
             {
@@ -304,18 +380,27 @@ public partial class GodotSteamPredictionMeshTransport : Node, IPredictionMeshTr
                 return;
             }
 
-            runtime.Connected = true;
-            Report(runtime, PredictionTransportRouteState.Connected);
+            runtime.MarkConnected(binding.PacketKind);
+
+            // Reported connected only once BOTH planes are up. A route announced on
+            // the first plane would invite sends on the second and drop them
+            // silently, which reads as packet loss rather than as a route that is
+            // not ready.
+            if (runtime.Connected)
+            {
+                Report(runtime, PredictionTransportRouteState.Connected);
+            }
         }
         else if (state is Steam.NetworkingConnectionState.ClosedByPeer or
                  Steam.NetworkingConnectionState.ProblemDetectedLocally)
         {
-            if (_routesByConnection.Remove(connection, out var runtime))
+            if (_routesByConnection.Remove(connection, out var binding))
             {
-                runtime.Connection = InvalidHandle;
-                runtime.Connected = false;
-                Close(connection, "Steam prediction connection closed");
-                Report(runtime, PredictionTransportRouteState.Disconnected);
+                // Losing either plane takes the route down. Half a route can carry
+                // commands but not movement, or the reverse, and both present as a
+                // character that is subtly broken rather than as a disconnection.
+                CloseBothPlanes(binding.Runtime, "Steam prediction connection closed");
+                Report(binding.Runtime, PredictionTransportRouteState.Disconnected);
             }
         }
     }
@@ -323,10 +408,34 @@ public partial class GodotSteamPredictionMeshTransport : Node, IPredictionMeshTr
     private void Reject(RouteRuntime runtime, uint connection, string detail)
     {
         _routesByConnection.Remove(connection);
-        runtime.Connection = InvalidHandle;
-        runtime.Connected = false;
-        Close(connection, detail);
+        CloseBothPlanes(runtime, detail);
         Report(runtime, PredictionTransportRouteState.Failed, detail);
+    }
+
+    /// <summary>
+    /// Closes both planes of a route and forgets their bindings.
+    /// </summary>
+    /// <remarks>
+    /// One place rather than repeated at each teardown site, because leaving one
+    /// plane open leaks a Steam connection and leaves a stale binding that a later
+    /// packet could resolve against a route that is otherwise gone.
+    /// </remarks>
+    private void CloseBothPlanes(RouteRuntime runtime, string detail)
+    {
+        foreach (var kind in new[] { ControlPacketKind, MovementPacketKind })
+        {
+            var connection = runtime.ConnectionFor(kind);
+            if (connection == InvalidHandle)
+            {
+                continue;
+            }
+
+            _routesByConnection.Remove(connection);
+            Close(connection, detail);
+            runtime.SetConnection(kind, InvalidHandle);
+        }
+
+        runtime.ResetConnected();
     }
 
     private void Remove(SessionPeerId peer, bool report = true)
@@ -336,14 +445,7 @@ public partial class GodotSteamPredictionMeshTransport : Node, IPredictionMeshTr
             return;
         }
 
-        if (runtime.Connection != InvalidHandle)
-        {
-            _routesByConnection.Remove(runtime.Connection);
-            Close(runtime.Connection, "Prediction route removed");
-            runtime.Connection = InvalidHandle;
-        }
-
-        runtime.Connected = false;
+        CloseBothPlanes(runtime, "Prediction route removed");
         if (report)
         {
             Report(runtime, PredictionTransportRouteState.Disconnected, "Route removed.");
@@ -398,17 +500,70 @@ public partial class GodotSteamPredictionMeshTransport : Node, IPredictionMeshTr
             peer, routeGeneration, attemptId, state, detail));
     }
 
+    /// <summary>Which route and which plane an inbound connection belongs to.</summary>
+    /// <remarks>
+    /// The plane is carried alongside the route rather than derived from the
+    /// payload, so a packet's class comes from the connection that actually
+    /// provides its isolation guarantee.
+    /// </remarks>
+    private readonly record struct ConnectionBinding(RouteRuntime Runtime, byte PacketKind);
+
     private sealed class RouteRuntime(
         SessionPeerId remotePeerId,
         uint routeGeneration,
         ulong attemptId,
         SteamPredictionEndpoint endpoint)
     {
+        private bool _controlConnected;
+        private bool _movementConnected;
+
         public SessionPeerId RemotePeerId { get; } = remotePeerId;
         public uint RouteGeneration { get; } = routeGeneration;
         public ulong AttemptId { get; } = attemptId;
         public SteamPredictionEndpoint Endpoint { get; } = endpoint;
-        public uint Connection { get; set; }
-        public bool Connected { get; set; }
+
+        public uint ControlConnection { get; set; }
+        public uint MovementConnection { get; set; }
+
+        /// <summary>Usable only when both planes are up.</summary>
+        /// <remarks>
+        /// A route with one plane can carry commands but not movement, or the
+        /// reverse. Both look like a subtly broken character rather than a transport
+        /// problem, so neither counts as connected.
+        /// </remarks>
+        public bool Connected => _controlConnected && _movementConnected;
+
+        public uint ConnectionFor(byte packetKind) =>
+            packetKind == ControlPacketKind ? ControlConnection : MovementConnection;
+
+        public void SetConnection(byte packetKind, uint connection)
+        {
+            if (packetKind == ControlPacketKind)
+            {
+                ControlConnection = connection;
+            }
+            else
+            {
+                MovementConnection = connection;
+            }
+        }
+
+        public void MarkConnected(byte packetKind)
+        {
+            if (packetKind == ControlPacketKind)
+            {
+                _controlConnected = true;
+            }
+            else
+            {
+                _movementConnected = true;
+            }
+        }
+
+        public void ResetConnected()
+        {
+            _controlConnected = false;
+            _movementConnected = false;
+        }
     }
 }

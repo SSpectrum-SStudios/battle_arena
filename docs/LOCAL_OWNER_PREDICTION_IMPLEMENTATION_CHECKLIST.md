@@ -2458,9 +2458,23 @@ forced when it is a decision.
   - Verification: both suites green with no order-dependent allocation failures,
     on repeated cold runs.
 
-- [ ] **P06-A6 — Configure Steam lanes, and make Steam the authority transport.**
-  - Status: **Planned. Two gaps found by asking which transport is actually the
-    target.**
+- [ ] **P06-A6 — Separate Steam planes by message class; Steam authority transport.**
+  - Status: **Plane split implemented.** Steam authority transport still outstanding.
+  - **Decision: separate connections per message class, not lanes.** Two connections
+    per peer on adjacent virtual ports — control on the advertised port, movement on
+    port + 1 — giving genuinely independent reliability streams so a control
+    retransmit cannot delay movement.
+  - The class is chosen by protobuf message type at send, and on receive the
+    *connection* is authoritative for class because the connection is what provides
+    the isolation. The framing byte is retained as a cross-check: a packet arriving
+    on the wrong plane is a routing bug, and silently reclassifying it would hide
+    exactly the defect the split was made to prevent.
+  - A route counts as connected only when **both** planes are up, and losing either
+    takes the whole route down. Half a route carries commands but not movement, or
+    the reverse — both present as a subtly broken character rather than as a
+    disconnection, which is far harder to diagnose.
+  - Wire format and advertised descriptor are unchanged: the movement port is
+    derived from the advertised one by a shared constant, so nothing new travels.
   - **Steam is the shipping target; ENet is the local test harness.** The
     verification so far has been the wrong way round — the harness is the one with
     correct head-of-line isolation, and the real target is the one missing it.
