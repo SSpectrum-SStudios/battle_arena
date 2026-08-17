@@ -1458,23 +1458,7 @@ One blocker, six majors. The blocker was the one that changed how the game feels
     and every replay pivot pass with zero unexplained divergence.
 
 
-- [ ] **P05-18 — Verify the Godot collision adapter in-engine.**
-  - Purpose: `GodotKinematicCollisionWorld` has no test and no probe. P01-09
-    proved the query *approach* but exercised a different class, and the adapter
-    added a path the probe deliberately never ran: `ResolveOverlap` uses
-    `RecoveryAsCollision = true`, which the probe kept disabled throughout, and
-    it runs before every frame's motion.
-  - Target files: `GodotKinematicCollisionWorldTests.cs`,
-    `kinematic_query_probe.tscn`, `run_kinematic_query_probe.ps1`.
-  - Verification: A headless probe proves no live-node movement, no dynamic
-    hits, correct foot-versus-centre capsule offset, stable collider identity,
-    reusable results, explicit `Margin` and `CollideSeparationRay`, and that a
-    resting capsule does not oscillate between recovery and ground snap.
-  - Blocking note: this must land before V2 movement is enabled on a real
-    build. Until then the explicit motor is exercised only against the
-    deterministic world and the offline arena.
-
-- [ ] **P05-19 — Store contact facts in the rewind unit.**
+- [ ] **P05-18 — Store contact facts in the rewind unit.**
   - Purpose: P05-01 promised "stable contact facts in replayable value state",
     and `CollisionContactState` exists only as scratch inside the motor.
     Contacts are derivable, so this is not a determinism break — but P06-01
@@ -1486,7 +1470,7 @@ One blocker, six majors. The blocker was the one that changed how the game feels
   - Verification: Contacts survive restore/replay identically and the bounded
     storage allocates nothing per frame.
 
-- [ ] **P05-20 — Supply attack movement influence to the explicit motor.**
+- [ ] **P05-19 — Supply attack movement influence to the explicit motor.**
   - Purpose: `CharacterMovementSimulator.InfluenceFor` returns null
     unconditionally. The plumbing is complete — `CharacterActionState` carries
     the step index through restore — but the authored policy mapping a step to
@@ -1497,6 +1481,65 @@ One blocker, six majors. The blocker was the one that changed how the game feels
   - Verification: Sprint gating, momentum preservation, and the acceleration and
     steering multipliers reproduce the legacy driver's behaviour for each
     authored attack step, under restore and replay.
+
+## Phase 5B — Godot Motor Integration and Engine Verification
+
+The explicit motor is proven against a deterministic fake world and the offline
+arena. Nothing has yet proven it behaves the same way against the real engine,
+and the adapter that connects the two has neither a test nor a probe. This phase
+closes that gap.
+
+It is numbered 5B rather than inserted as a new number because Phases 6 through
+12 are referenced by number throughout this checklist and the redesign document;
+renumbering them would invalidate every one of those references for no benefit.
+
+**Scope boundary.** This phase verifies the *query adapter and the motor against
+the real engine*. Wiring the motor into multiplayer is already owned elsewhere:
+P06-10 adds the commit-once Godot owner adapter and P06-11 integrates V2 owner
+prediction into `NetworkArena`. Engine-side performance budgets belong to P11-04.
+This phase is the prerequisite all three of those depend on.
+
+- [ ] **P5B-01 — Verify the Godot collision adapter in-engine.**
+  - Purpose: `GodotKinematicCollisionWorld` has no test and no probe. P01-09
+    proved the query *approach* but exercised a different class, and the adapter
+    added a path the probe deliberately never ran: `ResolveOverlap` uses
+    `RecoveryAsCollision = true`, which the probe kept disabled throughout, and
+    it runs before every frame's motion.
+  - Target files: `GodotKinematicCollisionWorldProbe.cs`,
+    `kinematic_collision_world_probe.tscn`,
+    `run_kinematic_collision_world_probe.ps1`.
+  - Verification: A headless probe proves no live-node movement, no dynamic
+    hits, correct foot-versus-centre capsule offset, stable collider identity,
+    reusable results, explicit `Margin` and `CollideSeparationRay`, and that a
+    resting capsule does not oscillate between penetration recovery and ground
+    snap.
+  - Blocking note: this must land before V2 movement is enabled on a real build,
+    and therefore before P06-11. Until then the explicit motor is exercised only
+    against the deterministic world and the offline arena.
+
+- [ ] **P5B-02 — Prove the explicit motor matches the legacy motor in the arena.**
+  - Purpose: P05-16 supplies the switch but nothing compares the two motors.
+    Both read the same authored `movement.json`, so a scripted input trace run
+    through each should produce closely matching motion — and where it does not,
+    the difference should be named and accepted rather than discovered later in
+    a playtest.
+  - Target files: `MovementMotorParityProbe.cs`,
+    `run_movement_motor_parity.ps1`, `MOVEMENT_TEST_ARENA.md`.
+  - Verification: One scripted trace covering flat running, sprint, a wall
+    slide, a stair climb, a jump arc, a crouch passage, and a roll runs under
+    both motors headlessly; per-frame position and velocity divergence stays
+    inside an authored tolerance, and any excursion is reported with its frame
+    and field rather than averaged away.
+
+- [ ] **P5B-03 — Measure the explicit motor's real per-frame query cost.**
+  - Purpose: P01-11 measured the *probe's* query cost, not the motor's. The
+    motor issues several queries per frame — recovery, sweep, per-slide-iteration
+    re-sweep, ground probe, and up to three more for a step — so the real budget
+    is a multiple of the probe's figure and has never been measured.
+  - Target files: `MovementMotorCostProbe.cs`, `run_movement_motor_cost.ps1`.
+  - Verification: Reports queries per frame and microseconds per frame for
+    typical and worst-case geometry, at replay depths of 1, 8, and 32 frames,
+    and fails if a frame exceeds the authored budget. Feeds P11-04.
 
 ## Phase 6 — Owner History and Exact Reconciliation
 
