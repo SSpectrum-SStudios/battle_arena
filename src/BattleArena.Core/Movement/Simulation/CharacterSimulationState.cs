@@ -39,6 +39,7 @@ public readonly record struct CharacterSimulationState
         SimulationInstant frame,
         CharacterKinematicState kinematic,
         CollisionProfileState profile,
+        FrameContactBuffer contacts,
         MovementSourceBuffer movementSources,
         CharacterActionState action,
         DeterministicCounterState counters,
@@ -93,6 +94,7 @@ public readonly record struct CharacterSimulationState
         Frame = frame;
         Kinematic = kinematic;
         Profile = profile;
+        Contacts = contacts;
         MovementSources = movementSources;
         Action = action;
         Counters = counters;
@@ -130,6 +132,20 @@ public readonly record struct CharacterSimulationState
     public CharacterKinematicState Kinematic { get; init; }
 
     public CollisionProfileState Profile { get; init; }
+
+    /// <summary>
+    /// The contacts this frame resolved against.
+    /// </summary>
+    /// <remarks>
+    /// Derivable from position, profile, and the world, so storing them is not
+    /// what makes replay correct — it is what makes a correction explainable. The
+    /// comparer can say the two simulations disagreed about which surface the
+    /// character was on rather than only that they disagreed about position, and
+    /// the policy can classify that as contact divergence rather than numeric
+    /// drift, which is the difference between a correction that may be smoothed
+    /// and one that must not be.
+    /// </remarks>
+    public FrameContactBuffer Contacts { get; init; }
 
     /// <summary>Active external motion, replayable rather than applied once as an impulse.</summary>
     public MovementSourceBuffer MovementSources { get; init; }
@@ -194,6 +210,7 @@ public readonly record struct CharacterSimulationState
             now,
             CharacterKinematicState.AtRest(position, facingYawRadians),
             CollisionProfileState.Standing,
+            default,
             default,
             CharacterActionState.Idle,
             DeterministicCounterState.Empty,
@@ -266,6 +283,7 @@ public readonly record struct CharacterSimulationState
             .WithVelocity(runtime.HorizontalVelocity, runtime.VerticalVelocity)
             .WithFacing(runtime.FacingYawRadians),
         Profile,
+        Contacts,
         MovementSources,
         Action,
         Counters,
@@ -294,6 +312,9 @@ public readonly record struct CharacterSimulationState
 
     public CharacterSimulationState WithProfile(CollisionProfileState profile) =>
         this with { Profile = profile };
+
+    public CharacterSimulationState WithContacts(FrameContactBuffer contacts) =>
+        this with { Contacts = contacts };
 
     public CharacterSimulationState WithMovementSources(MovementSourceBuffer sources) =>
         this with { MovementSources = sources };

@@ -1620,7 +1620,47 @@ into evidence about the real engine.
     probes measure the motor against it.
 
 - [ ] **P5B-01 — Verify the Godot collision adapter in-engine.**
-  - Status: **Stubs Reviewed**.
+  - Status: **Implemented; two of three engine defects fixed, one open.**
+  - Findings from the first in-engine runs, which is what this item exists for.
+    Every one was invisible to the 200-test unit suite because that suite runs
+    against the deterministic reference world:
+    1. **A walkable-ground contact at travel fraction zero cancelled the entire
+       frame's motion.** Every grounded frame contacts the floor at fraction
+       zero, because the driver proposes a small downward velocity to stay
+       stuck to it. Walkable ground is not "blocking", so the slide loop broke
+       and discarded all remaining motion — horizontal included — and the
+       character could barely walk. Fixed: the loop now projects against the
+       earliest contact the motion is driving into, blocking or not, so the
+       floor removes only the downward component. Regression test added; the
+       unit suite missed it because every existing test passed zero vertical
+       motion.
+    2. **The surface skin exactly equalled the engine's query margin**, both one
+       millimetre, so a resting capsule sat *inside* the margin and every sweep
+       re-reported the floor — including sweeps of purely horizontal motion the
+       floor does not obstruct. Measured cost: a walking character covered 3.378
+       m in-engine where the reference covered 3.600 m, six percent slower.
+       Fixed by raising the skin to five millimetres, with the
+       skin-exceeds-margin relationship documented as the invariant it is.
+    3. **OPEN — the step solver cannot climb in-engine.** Traced: on reaching
+       the step the capsule penetrates its face by roughly three centimetres,
+       so the solver's up-sweep starts already overlapping and returns no
+       travel. The character then oscillates against the face, climbing about
+       two centimetres and falling back, frame after frame. The cause is the
+       one the stub review predicted: `ResolveOverlap` probes with a tiny
+       *downward* motion and `RecoveryAsCollision`, so it does not report a
+       *horizontal* overlap and penetration recovery never fires. The reference
+       world resolves overlap on any axis and therefore climbs correctly, which
+       is exactly why the two disagreed.
+  - Also changed: the deterministic collision world moved from the test project
+    into `BattleArena.Core`. The probe must compare against the *same* reference
+    the motor's unit tests use — a copy could drift, and the agreement check
+    would then prove only that the engine matches a fake nobody tests against.
+  - The agreement check asserts behaviour rather than matching positions frame
+    by frame. The reference world approximates the capsule as an axis-aligned
+    box, so at a step edge the two differ by construction; demanding positional
+    parity would mean tuning the assertion until it passed rather than learning
+    anything. It compares open-ground travel rate, that a wall stops both, and
+    that a step is climbed by both.
   - Purpose: `GodotKinematicCollisionWorld` has no test and no probe. P01-09
     proved the query *approach* but exercised a different class, and the adapter
     added a path the probe deliberately never ran: `ResolveOverlap` uses

@@ -42,10 +42,18 @@ public readonly record struct CapsuleMotorPolicy
     public int MaximumSlideIterations { get; init; }
 
     /// <summary>
-    /// Small separation kept from surfaces so the next frame's sweep does not
-    /// start already touching, which would report a zero-fraction contact and
-    /// stall progress.
+    /// Separation kept from surfaces so the next frame's sweep does not start
+    /// already touching.
     /// </summary>
+    /// <remarks>
+    /// This must comfortably exceed the collision world's own query margin.
+    /// Godot's default margin is one millimetre, and a capsule resting inside
+    /// that margin has the floor re-reported as a contact on every sweep —
+    /// including sweeps of purely horizontal motion, which the floor does not
+    /// obstruct at all. The measured cost of getting this wrong was a walking
+    /// character covering six percent less ground in-engine than in simulation,
+    /// and a step that could never be climbed.
+    /// </remarks>
     public double SurfaceSkin { get; init; }
 
     /// <summary>
@@ -84,7 +92,7 @@ public readonly record struct CapsuleMotorPolicy
         MaximumRecoverablePenetration = 0.25d,
         IgnoredPenetrationDepth = 0.002d,
         MaximumSlideIterations = 4,
-        SurfaceSkin = 1e-3d,
+        SurfaceSkin = 5e-3d,
     };
 
     /// <summary>Builds the policy from authored attributes for one revision.</summary>
@@ -135,12 +143,14 @@ public readonly record struct CapsuleMotionResult
         CharacterKinematicState state,
         CapsuleMotionOutcome outcome,
         int slideIterations,
-        bool ceilingBlocked)
+        bool ceilingBlocked,
+        FrameContactBuffer contacts = default)
     {
         State = state;
         Outcome = outcome;
         SlideIterations = slideIterations;
         CeilingBlocked = ceilingBlocked;
+        Contacts = contacts;
     }
 
     public CharacterKinematicState State { get; }
@@ -154,6 +164,16 @@ public readonly record struct CapsuleMotionResult
     /// rules can cancel a rise rather than have the character hang against it.
     /// </summary>
     public bool CeilingBlocked { get; }
+
+    /// <summary>
+    /// The contacts this step resolved against, in stable order.
+    /// </summary>
+    /// <remarks>
+    /// Collected during sliding and from the grounding probe, so the set
+    /// describes what actually shaped the frame rather than everything the world
+    /// happened to report.
+    /// </remarks>
+    public FrameContactBuffer Contacts { get; }
 
     public bool RequiresRepair => Outcome is CapsuleMotionOutcome.UnrecoverablePenetration;
 }
@@ -285,11 +305,24 @@ public sealed class CapsuleMovementSimulator
         }
 
         var grounded = ResolveGrounding(current, profile.Current, wasRising, profiles, policy);
+
+        // The supporting surface joins the contacts sliding resolved against, so
+        // the retained set describes everything that shaped the frame.
+        var contacts = slid.Contacts;
+        if (grounded.State.IsGrounded && grounded.State.Support.IsValid)
+        {
+            contacts.TryAdd(new FrameContactRecord(
+                grounded.State.Support,
+                grounded.State.GroundNormal,
+                ContactSurfaceKind.WalkableGround));
+        }
+
         return new CapsuleMotionResult(
             grounded.State,
             outcome,
             iterations,
-            slid.CeilingBlocked);
+            slid.CeilingBlocked,
+            contacts);
     }
 
     /// <summary>
@@ -367,6 +400,7 @@ public sealed class CapsuleMovementSimulator
         var outcome = CapsuleMotionOutcome.Completed;
         var ceilingBlocked = false;
         var iterations = 0;
+        var resolved = default(FrameContactBuffer);
 
         while (iterations < policy.MaximumSlideIterations)
         {
@@ -401,11 +435,18 @@ public sealed class CapsuleMovementSimulator
             // The determinism rule: order by content, never by report order.
             window.Sort(default(CollisionContactState.StableComparer));
 
-            var blocking = FirstBlocking(window, sweep.RemainingHorizontal, sweep.RemainingVertical);
-            if (blocking is not { } contact)
+            // The earliest contact the motion is actually driving into, blocking
+            // or not. Walkable ground is not blocking, but it still has to remove
+            // the motion travelling into it: a grounded character moving forward
+            // under gravity hits the floor at travel fraction zero every frame,
+            // and treating that as "nothing to slide against" would discard the
+            // whole frame's motion — horizontal included — and leave the
+            // character unable to walk.
+            var opposing = FirstOpposing(window, sweep.RemainingHorizontal, sweep.RemainingVertical);
+            if (opposing is not { } contact)
             {
-                // Only walkable ground was touched, which supports rather than
-                // blocks; the motion is spent.
+                // Contacts were reported but none oppose the motion, so there is
+                // nothing to project against and the motion is spent.
                 remainingHorizontal = sweep.RemainingHorizontal;
                 remainingVertical = sweep.RemainingVertical;
                 break;
@@ -415,6 +456,8 @@ public sealed class CapsuleMovementSimulator
             {
                 ceilingBlocked = true;
             }
+
+            resolved.TryAdd(FrameContactRecord.From(contact));
 
             // Project the unspent motion onto the blocking plane so sliding is
             // continuous rather than a stop, and the velocity onto the same
@@ -432,11 +475,20 @@ public sealed class CapsuleMovementSimulator
 
             remainingHorizontal = projectedHorizontal;
             remainingVertical = projectedVertical;
-            outcome = CapsuleMotionOutcome.Slid;
+
+            // Sliding along walkable ground is ordinary grounded movement, not a
+            // blocked frame; only a genuinely blocking surface changes the
+            // reported outcome.
+            if (contact.IsBlocking)
+            {
+                outcome = CapsuleMotionOutcome.Slid;
+            }
 
             if (!madeProgress)
             {
-                outcome = CapsuleMotionOutcome.Blocked;
+                outcome = contact.IsBlocking
+                    ? CapsuleMotionOutcome.Blocked
+                    : CapsuleMotionOutcome.Completed;
                 break;
             }
         }
@@ -452,7 +504,8 @@ public sealed class CapsuleMovementSimulator
             state.WithPosition(position).WithVelocity(velocityHorizontal, velocityVertical),
             outcome,
             iterations,
-            ceilingBlocked);
+            ceilingBlocked,
+            resolved);
     }
 
     /// <summary>
@@ -507,8 +560,16 @@ public sealed class CapsuleMovementSimulator
         // but it is a canonical comparison field, and any rule that reads it —
         // a landing roll, a ledge left mid-roll — sees a value that is not true.
         var landedVertical = state.VerticalVelocity < 0d ? 0d : state.VerticalVelocity;
+
+        // Rest the skin distance above the surface rather than exactly on it.
+        // A capsule sitting precisely on the floor is inside the engine's query
+        // margin, so the next frame's sweep reports the floor as a contact even
+        // for purely horizontal motion — which costs an iteration and a slice of
+        // travel every frame, and shows up as the character walking measurably
+        // slower in-engine than in simulation.
+        var snapDistance = Math.Max(0d, probe.Distance - policy.SurfaceSkin);
         var snapped = state
-            .WithPosition(state.Position.Offset(HorizontalVector.Zero, -probe.Distance))
+            .WithPosition(state.Position.Offset(HorizontalVector.Zero, -snapDistance))
             .WithVelocity(state.HorizontalVelocity, landedVertical);
         return new CapsuleMotionResult(
             snapped.WithGround(true, probe.Normal, probe.Support),
@@ -619,17 +680,25 @@ public sealed class CapsuleMovementSimulator
     }
 
     /// <summary>
-    /// The first contact, in stable order, that both blocks and actually opposes
-    /// the remaining motion.
+    /// The first contact, in stable order, whose plane the remaining motion is
+    /// actually travelling into.
     /// </summary>
     /// <remarks>
+    /// <para>
+    /// Blocking and non-blocking contacts are both candidates. A walkable floor
+    /// does not stop a character, but it does remove the downward component of a
+    /// frame that is moving forward under gravity — and that case happens every
+    /// single grounded frame, so skipping non-blocking contacts here would leave
+    /// nothing to project against and discard the whole frame's motion.
+    /// </para>
+    /// <para>
     /// The opposition test matters because a query can report contacts at the
-    /// resting pose whose normals the motion is travelling away from. Taking the
-    /// first blocking contact regardless would project against a plane that is
-    /// not in the way, make no progress, and abandon the rest of the frame's
-    /// motion as blocked.
+    /// resting pose whose normals the motion is travelling away from. Projecting
+    /// against one of those would make no progress and abandon the rest of the
+    /// frame.
+    /// </para>
     /// </remarks>
-    private static CollisionContactState? FirstBlocking(
+    private static CollisionContactState? FirstOpposing(
         ReadOnlySpan<CollisionContactState> ordered,
         HorizontalVector remainingHorizontal,
         double remainingVertical)
@@ -637,11 +706,6 @@ public sealed class CapsuleMovementSimulator
         for (var index = 0; index < ordered.Length; index++)
         {
             ref readonly var candidate = ref ordered[index];
-            if (!candidate.IsBlocking)
-            {
-                continue;
-            }
-
             var into = (remainingHorizontal.X * candidate.Normal.X) +
                 (remainingVertical * candidate.Normal.Y) +
                 (remainingHorizontal.Z * candidate.Normal.Z);

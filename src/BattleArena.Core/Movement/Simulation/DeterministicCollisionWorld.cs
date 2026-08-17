@@ -1,14 +1,19 @@
 using BattleArena.Core.Common;
-using BattleArena.Core.Movement;
-using BattleArena.Core.Movement.Simulation;
 
-namespace BattleArena.Core.Tests.Movement.Simulation;
+namespace BattleArena.Core.Movement.Simulation;
 
 /// <summary>
 /// A collision world made of axis-aligned boxes and bounded planes, with exact
 /// authored geometry.
 /// </summary>
 /// <remarks>
+/// <para>
+/// This ships in Core rather than in the test project because two things need
+/// the <em>same</em> reference world: the motor's unit tests, and the in-engine
+/// probe that asserts the Godot adapter agrees with it. A duplicated copy could
+/// drift from the one the tests use, which would make that agreement check
+/// meaningless — it would prove the engine matches a fake nobody tests against.
+/// </para>
 /// <para>
 /// This is the second implementation <see cref="ICharacterCollisionWorld"/>
 /// exists for, and it is what makes the motor's rules testable as pure logic.

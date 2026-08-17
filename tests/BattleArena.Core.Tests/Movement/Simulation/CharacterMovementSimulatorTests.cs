@@ -48,7 +48,9 @@ public sealed class CharacterMovementSimulatorTests
 
         Assert.True(leftGround, "The character must actually leave the ground.");
         Assert.True(state.Kinematic.IsGrounded, "And must land again.");
-        Assert.Equal(0d, state.Kinematic.Position.Y, 3);
+
+        // Lands resting the skin distance above the floor, not exactly on it.
+        Assert.InRange(state.Kinematic.Position.Y, 0d, 0.01d);
     }
 
     [Fact]
@@ -198,6 +200,54 @@ public sealed class CharacterMovementSimulatorTests
         // velocity stays at rest rather than compounding.
         Assert.All(speeds, speed =>
             Assert.True(speed < 0.5d, $"Source velocity leaked into state: {speed}."));
+    }
+
+    [Fact]
+    public void ContactsAreRecordedAndSurviveRestoreAndReplayIdentically()
+    {
+        // Contacts are derivable, so storing them is not what makes replay
+        // correct. It is what makes a correction explainable: the comparer can
+        // say the two simulations disagreed about which surface the character was
+        // on rather than only that they disagreed about position.
+        var world = new DeterministicCollisionWorld(Fixture.Profiles)
+            .AddGround()
+            .AddBox(2, new WorldPosition(1.5d, 0d, -10d), new WorldPosition(3d, 5d, 10d));
+        var fixture = new Fixture(world);
+
+        var history = new List<CharacterSimulationState>();
+        var state = fixture.Start();
+        history.Add(state);
+        for (var i = 0; i < 30; i++)
+        {
+            state = fixture.Step(state, new HorizontalVector(1d, 0d), []);
+            history.Add(state);
+        }
+
+        Assert.Contains(history, frame => frame.Contacts.Count > 0);
+
+        // Restore from every frame and replay; the contact record must match.
+        for (var restoreAt = 0; restoreAt < history.Count - 1; restoreAt++)
+        {
+            var replayed = history[restoreAt];
+            for (var i = restoreAt; i < 30; i++)
+            {
+                replayed = fixture.Step(replayed, new HorizontalVector(1d, 0d), []);
+                Assert.Equal(history[i + 1].Contacts, replayed.Contacts);
+            }
+        }
+    }
+
+    [Fact]
+    public void TheSupportingSurfaceIsAmongTheRecordedContacts()
+    {
+        var fixture = new Fixture();
+
+        var state = fixture.Step(fixture.Start(), HorizontalVector.Zero, []);
+
+        Assert.True(state.Kinematic.IsGrounded);
+        Assert.True(
+            state.Contacts.Touches(state.Kinematic.Support),
+            "The surface the character is standing on must appear in its contacts.");
     }
 
     [Fact]

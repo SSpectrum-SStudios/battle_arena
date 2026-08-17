@@ -415,7 +415,7 @@ public sealed class CharacterMovementSimulator
             kinematic = kinematic.WithVelocity(kinematic.HorizontalVelocity, 0d);
         }
 
-        var settled = state.WithKinematic(kinematic);
+        var settled = state.WithKinematic(kinematic).WithContacts(motion.Contacts);
         var landed = kinematic.IsGrounded && state.LocomotionMode == LocomotionMode.Airborne;
         var left = !kinematic.IsGrounded && state.LocomotionMode == LocomotionMode.Grounded;
 

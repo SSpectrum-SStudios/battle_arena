@@ -27,6 +27,38 @@ public sealed class CapsuleMovementSimulatorTests
     }
 
     [Fact]
+    public void ForwardMotionUnderGravitySurvivesTheFloorContact()
+    {
+        // Every grounded frame looks like this: the driver proposes a small
+        // downward velocity to keep the character on the floor, so the floor is
+        // contacted at travel fraction zero. Only the downward component may be
+        // removed — cancelling the frame outright leaves the character unable to
+        // walk, and no test that passed zero vertical motion would ever see it.
+        var world = new DeterministicCollisionWorld(Profiles).AddGround();
+        var motor = new CapsuleMovementSimulator(world);
+
+        var state = At(0d, 0d, 0d);
+        for (var frame = 0; frame < 20; frame++)
+        {
+            state = motor.Move(
+                state,
+                CollisionProfileState.Standing,
+                new HorizontalVector(0.1d, 0d),
+                -0.05d,
+                new SimulationInstant(frame),
+                new SimulationInstant(frame + 1),
+                Profiles,
+                Policy).State;
+        }
+
+        Assert.True(
+            state.Position.X > 1.9d,
+            $"Expected ~2 m of travel under gravity, reached X={state.Position.X:0.###}.");
+        Assert.True(state.IsGrounded);
+        Assert.InRange(state.Position.Y, 0d, Policy.SurfaceSkin * 2d);
+    }
+
+    [Fact]
     public void AWallStopsForwardTravelAndTheCharacterSlidesAlongIt()
     {
         // Sliding rather than stopping is what makes wall contact feel
@@ -220,7 +252,11 @@ public sealed class CapsuleMovementSimulatorTests
         Assert.False(rising.State.IsGrounded);
         Assert.Equal(0.05d, rising.State.Position.Y, 6);
         Assert.True(falling.State.IsGrounded);
-        Assert.Equal(0d, falling.State.Position.Y, 6);
+
+        // Rests the skin distance above the surface, not exactly on it: sitting
+        // precisely on the floor puts the capsule inside the engine's query
+        // margin and costs travel every frame.
+        Assert.InRange(falling.State.Position.Y, 0d, Policy.SurfaceSkin * 2d);
     }
 
     [Fact]
