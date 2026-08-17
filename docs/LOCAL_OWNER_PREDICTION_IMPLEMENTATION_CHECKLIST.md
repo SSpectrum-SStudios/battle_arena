@@ -1619,8 +1619,9 @@ into evidence about the real engine.
     P06-01 rather than after 5B, because it changes the rewind unit and 5B's
     probes measure the motor against it.
 
-- [ ] **P5B-01 — Verify the Godot collision adapter in-engine.**
-  - Status: **Implemented; two of three engine defects fixed, one open.**
+- [x] **P5B-01 — Verify the Godot collision adapter in-engine.**
+  - Status: **Implemented And Reviewed.** Three engine defects found and all
+    three fixed. Gate wired into `verify_multiplayer_parity.ps1`.
   - Findings from the first in-engine runs, which is what this item exists for.
     Every one was invisible to the 200-test unit suite because that suite runs
     against the deterministic reference world:
@@ -1641,16 +1642,66 @@ into evidence about the real engine.
        m in-engine where the reference covered 3.600 m, six percent slower.
        Fixed by raising the skin to five millimetres, with the
        skin-exceeds-margin relationship documented as the invariant it is.
-    3. **OPEN — the step solver cannot climb in-engine.** Traced: on reaching
-       the step the capsule penetrates its face by roughly three centimetres,
-       so the solver's up-sweep starts already overlapping and returns no
-       travel. The character then oscillates against the face, climbing about
-       two centimetres and falling back, frame after frame. The cause is the
-       one the stub review predicted: `ResolveOverlap` probes with a tiny
-       *downward* motion and `RecoveryAsCollision`, so it does not report a
-       *horizontal* overlap and penetration recovery never fires. The reference
-       world resolves overlap on any axis and therefore climbs correctly, which
-       is exactly why the two disagreed.
+    3. **A character was permanently stuck on a 0.25 m step in-engine.** Fixed.
+       This was the most serious of the three and the hardest to see, so the
+       wrong first diagnosis is kept here deliberately.
+
+       *The diagnosis first recorded here was wrong.* It claimed the up-sweep
+       started already overlapping because `ResolveOverlap` probes downward and
+       so misses horizontal overlap. Instrumenting the adapter's raw answers
+       disproved that in one run: the up-sweep achieved its full 0.4 m and the
+       raised forward sweep its full 0.06 m. Nothing was overlapping. The
+       lesson is that the oscillating trace was equally consistent with two
+       different causes, and I picked one by plausibility rather than measuring
+       — the instrumented run cost less than the reasoning that preceded it.
+
+       The real cause is capsule geometry. A capsule's bottom is a hemisphere,
+       so walking into a step it contacts the step's top **edge** while its axis
+       is still radius-scale short of the face: exactly
+       `sqrt(r² − (r − h)²)` = 0.371 m for a 0.4 m radius against a 0.25 m step,
+       which is precisely where the trace stalled (X ≈ 1.629 against a face at
+       X = 2.0). An edge normal is steeper than any walkable limit — measured
+       (−0.801, 0.599, 0), or 53°, against a 45° limit — so `SolveStep`'s
+       down-probe classified the landing as `UnwalkableSlope` and refused the
+       step, every frame, forever. `ResolveGrounding` rejected the same corner,
+       so the character was also considered airborne while resting on it: it
+       rode the corner up about two centimetres, was declared unsupported,
+       fell back, and repeated.
+
+       Fixed by probing the step-solver's forward sweep at least a capsule
+       radius even when the frame's own motion is far shorter, so the down-probe
+       is taken where the axis has cleared the face and reports the step's flat
+       top. The **commit** still advances only the distance the frame earned —
+       committing the probe distance would teleport the character up to a radius
+       forward whenever a step came into range — and the committed landing is
+       re-checked for clearance, since the probe position cleared and the commit
+       sits behind it.
+
+       Four unit tests lock this in (`CapsuleStepCornerTests`), against a world
+       that reproduces the corner geometry. Two of them fail without the fix;
+       the other two are guards that the wider probe does not turn a wall into a
+       step or commit into geometry, and they pass either way by design. That
+       split is deliberate — a regression test that passes before the fix is
+       decoration, and I verified which was which by reverting the fix and
+       re-running.
+  - **Why 201 unit tests could not see any of this.** All three defects live at
+    the engine boundary, and the reference world is a box. Specifically for the
+    step: a box's flat bottom reports the step's flat top face the instant it
+    overhangs, so it climbs in a single frame and every step assertion in the
+    suite has been asserting *box* behaviour. This is a standing limitation of
+    the reference world rather than something now fixed — it will keep
+    disagreeing with the engine wherever capsule roundness matters, such as
+    convex corners and ledge edges. P5B-02's parity trace against the legacy
+    motor in the real arena is what covers the rest.
+  - **Latent gap recorded, deliberately not fixed here.** The adapter ignores
+    `ExcludedCollider` in both `Sweep` and `ResolveOverlap`, while the reference
+    world honours it and the interface documents it. Nothing is affected today
+    because the motor passes `SupportIdentity.None` at all four call sites. It
+    is not fixed now because the obvious implementation — populating
+    `PhysicsTestMotionParameters3D.ExcludeBodies` — allocates a Godot array per
+    query on the hot path, and whether that is affordable is exactly what
+    P5B-03 measures. Fixing it blind would trade a dormant bug for a per-frame
+    allocation in the replay loop.
   - Also changed: the deterministic collision world moved from the test project
     into `BattleArena.Core`. The probe must compare against the *same* reference
     the motor's unit tests use — a copy could drift, and the agreement check
@@ -1674,9 +1725,15 @@ into evidence about the real engine.
     reusable results, explicit `Margin` and `CollideSeparationRay`, and that a
     resting capsule does not oscillate between penetration recovery and ground
     snap.
-  - Blocking note: this must land before V2 movement is enabled on a real build,
-    and therefore before P06-11. Until then the explicit motor is exercised only
-    against the deterministic world and the offline arena.
+  - The probe's strongest case is the one added last: walking the whole course
+    under the real `CharacterMovementSimulator`, in-engine and in the reference.
+    Every other case drives `CapsuleMovementSimulator` directly with a
+    hand-supplied vertical motion, which cannot distinguish "the capsule cannot
+    climb" from "the harness pulled it back down each frame". That ambiguity is
+    what made the step defect look like a harness artifact; the driver run
+    settled it, showing the engine stuck at X=1.628 where the reference reached
+    X=5.6. Both now reach X=5.6.
+  - Blocking note resolved: this has landed, so P06-11 is unblocked.
 
 - [ ] **P5B-02 — Prove the explicit motor matches the legacy motor in the arena.**
   - Status: **Stubs Reviewed**.

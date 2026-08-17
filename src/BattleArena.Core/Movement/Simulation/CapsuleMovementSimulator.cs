@@ -620,17 +620,44 @@ public sealed class CapsuleMovementSimulator
             return new CapsuleMotionResult(state, CapsuleMotionOutcome.Blocked, 0, false);
         }
 
-        // Forward.
+        // Forward, probed at least a capsule radius even when the frame's own
+        // motion is far shorter.
+        //
+        // This is the difference between a capsule and the box the reference
+        // world approximates it with, and it is the whole reason stepping worked
+        // in simulation and not in the engine. A capsule's bottom is a
+        // hemisphere, so walking into a step it contacts the step's top EDGE
+        // while its axis is still radius-scale short of the face: for a 0.4 m
+        // radius against a 0.25 m step, 0.37 m short. An edge normal is steeper
+        // than any walkable limit — measured at 53 degrees against a 45 degree
+        // limit — so a down-probe taken at the frame's own advance lands on the
+        // corner, classifies it as an unwalkable slope, and refuses the step
+        // forever. The character sticks to the step and rides the corner up and
+        // down a couple of centimetres per frame. A box has a flat bottom and
+        // reports the step's flat top the instant it overhangs, which is why
+        // every unit test passed.
+        //
+        // So the probe advances far enough for the capsule's axis to clear the
+        // face, while the COMMIT below stays within what the frame earned. The
+        // probe answers "is there a walkable surface to step onto", which is a
+        // question about the geometry ahead, not about this frame's speed.
+        var radius = profiles.For(profile).Radius;
+        var probeDistance = Math.Max(blockedMotion.Length, radius + policy.SurfaceSkin);
         var forward = _world.Sweep(
             new CapsuleSweepRequest(
-                raised, blockedMotion, 0d, profile, SupportIdentity.None, policy.WalkableSlopeRadians),
+                raised,
+                blockedMotion.Normalized * probeDistance,
+                0d,
+                profile,
+                SupportIdentity.None,
+                policy.WalkableSlopeRadians),
             contacts);
-        var advanced = raised.Offset(forward.AchievedHorizontal, 0d);
-        var progress = forward.AchievedHorizontal.Length;
-        if (progress <= MovementMath.Epsilon)
+        var probed = raised.Offset(forward.AchievedHorizontal, 0d);
+        if (forward.AchievedHorizontal.Length <= MovementMath.Epsilon)
         {
-            // No forward progress means this is a wall, not a step. Refusing here
-            // is what stops a character gaining height by pressing into it.
+            // No forward progress even raised means this is a wall, not a step.
+            // Refusing here is what stops a character gaining height by pressing
+            // into it.
             return new CapsuleMotionResult(state, CapsuleMotionOutcome.Blocked, 0, false);
         }
 
@@ -638,7 +665,7 @@ public sealed class CapsuleMovementSimulator
         // when headroom cut the lift short would let the solver descend further
         // than it climbed.
         var down = _world.ProbeGround(
-            new GroundProbeRequest(advanced, up.AchievedVertical, profile));
+            new GroundProbeRequest(probed, up.AchievedVertical, profile));
         if (!down.FoundGround)
         {
             return new CapsuleMotionResult(state, CapsuleMotionOutcome.Blocked, 0, false);
@@ -651,7 +678,28 @@ public sealed class CapsuleMovementSimulator
             return new CapsuleMotionResult(state, CapsuleMotionOutcome.Blocked, 0, false);
         }
 
-        var landed = advanced.Offset(HorizontalVector.Zero, -down.Distance);
+        // Commit only the horizontal distance the frame actually earned, at the
+        // height the step provides. Committing the probe distance instead would
+        // teleport the character up to a radius forward whenever a step was in
+        // range, which is a far worse artifact than the small forward float that
+        // stepping onto a lip has always had.
+        var earned = forward.AchievedHorizontal.Length <= blockedMotion.Length
+            ? forward.AchievedHorizontal
+            : blockedMotion;
+        var landed = new WorldPosition(
+            raised.X + earned.X,
+            probed.Y - down.Distance,
+            raised.Z + earned.Z);
+
+        // The probe found a surface where the capsule was over the step; the
+        // commit is behind that, so verify the committed position is actually
+        // free before taking it. Without this the solver could place the
+        // character inside geometry that only the probe position cleared.
+        if (!_world.HasClearance(new ClearanceRequest(landed, profile, SupportIdentity.None)))
+        {
+            return new CapsuleMotionResult(state, CapsuleMotionOutcome.Blocked, 0, false);
+        }
+
         return new CapsuleMotionResult(
             state.WithPosition(landed).WithGround(true, down.Normal, down.Support),
             CapsuleMotionOutcome.Stepped,

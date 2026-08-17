@@ -363,7 +363,6 @@ public sealed partial class GodotKinematicCollisionWorldProbe : Node3D
         }
 
         // 3. A step is climbed by both.
-        DiagnoseStep(engineMotor);
         var engineStep = RunTo(engineMotor, new WorldPosition(0d, 0d, 0d), 60);
         var referenceStep = RunTo(referenceMotor, new WorldPosition(0d, 0d, 0d), 60);
         if (engineStep.Position.Y < 0.2d || referenceStep.Position.Y < 0.2d)
@@ -372,28 +371,93 @@ public sealed partial class GodotKinematicCollisionWorldProbe : Node3D
                 $"step climb: engine ended at Y={engineStep.Position.Y:0.###} and reference at " +
                 $"Y={referenceStep.Position.Y:0.###}; both must climb the 0.25 m step.");
         }
+
+        // 4. And the whole course, through the driver gameplay actually runs.
+        VerifyFullDriverCrossesTheCourse(reference);
     }
 
-    /// <summary>Per-frame trace of the step approach, for diagnosis.</summary>
-    private static void DiagnoseStep(CapsuleMovementSimulator motor)
+    /// <summary>
+    /// The character walks the course under the real
+    /// <see cref="CharacterMovementSimulator"/>, in-engine and in the reference.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The strongest case here, and the one that settled the step-climb defect.
+    /// Every other case drives <see cref="CapsuleMovementSimulator"/> directly
+    /// with a hand-supplied vertical motion, which cannot distinguish "the
+    /// capsule cannot climb" from "the harness pulled it back down each frame".
+    /// The driver integrates gravity into velocity and owns grounding, so it is
+    /// the only harness whose answer is about gameplay.
+    /// </para>
+    /// <para>
+    /// It asserts the engine gets as far as the reference does rather than
+    /// matching positions: the two model the capsule differently and will always
+    /// differ in the millimetres. Being stuck against a step is not a
+    /// millimetre-scale difference, which is the point.
+    /// </para>
+    /// </remarks>
+    private void VerifyFullDriverCrossesTheCourse(ICharacterCollisionWorld reference)
     {
-        var state = CharacterKinematicState.AtRest(new WorldPosition(0d, 0d, 0d), 0d);
-        for (var frame = 0; frame < 40; frame++)
+        var engineEnd = RunFullDriverCourse(_world);
+        var referenceEnd = RunFullDriverCourse(reference);
+
+        // The step spans X in [2, 4] and the wall stands at X = 6. A run that
+        // ends short of the step never climbed it.
+        if (engineEnd.Position.X < 4.5d)
         {
-            var result = motor.Move(
-                state, CollisionProfileState.Standing,
-                new HorizontalVector(0.06d, 0d), -0.05d,
-                new SimulationInstant(frame), new SimulationInstant(frame + 1),
-                Profiles, Policy);
-            state = result.State;
-            if (frame >= 24 && frame <= 32)
-            {
-                GD.Print(
-                    $"[CollisionWorldProbe]   step f{frame}: pos=({state.Position.X:0.####}, " +
-                    $"{state.Position.Y:0.####}) outcome={result.Outcome} " +
-                    $"iters={result.SlideIterations} grounded={state.IsGrounded}");
-            }
+            _failures.Add(
+                $"full driver: in-engine the character stopped at X={engineEnd.Position.X:0.###} " +
+                $"where the reference reached X={referenceEnd.Position.X:0.###}. It is stuck on " +
+                "the 0.25 m step, which is a character that cannot walk up a stair in play.");
         }
+
+        if (Math.Abs(engineEnd.Position.X - referenceEnd.Position.X) > 0.25d)
+        {
+            _failures.Add(
+                $"full driver: engine reached X={engineEnd.Position.X:0.###} and reference " +
+                $"X={referenceEnd.Position.X:0.###}; the two disagree about the course by more " +
+                "than a capsule-versus-box difference explains.");
+        }
+
+        if (!engineEnd.IsGrounded)
+        {
+            _failures.Add("full driver: the character ended the course airborne in-engine.");
+        }
+    }
+
+    /// <summary>Walks the course for two seconds under the real driver.</summary>
+    private static CharacterKinematicState RunFullDriverCourse(ICharacterCollisionWorld world)
+    {
+        var attributes = new MovementAttributeSnapshot(
+            1,
+            new GroundMovementAttributes(6, 13, 8, 10, 12, 20, 7, 2, -0.4));
+        var capabilities = MovementCapabilitySnapshot.CreateBaseFighter(1);
+        var driver = new CharacterMovementSimulator(
+            new CapsuleMovementSimulator(world), new MovementSourceSimulator());
+
+        var revision = new MovementConfigurationRevision(1);
+        var capabilityRevision = new MovementCapabilityRevision(1);
+        var state = CharacterSimulationState.CreateGrounded(
+            new WorldPosition(0d, 0d, 0d), 0d, new SimulationInstant(100), revision, capabilityRevision);
+
+        var input = new CharacterSimulationInput(
+            MovementAxes.FromUnitVector(new HorizontalVector(1d, 0d)),
+            ViewOrientation.FromRadians(0d, 0d),
+            new MovementHeldState(MovementHeldButtons.None),
+            default,
+            default,
+            default,
+            revision,
+            capabilityRevision);
+
+        for (var frame = 0; frame < 120; frame++)
+        {
+            var context = SimulationStepContext.Current(
+                new SimulationInstant(state.Frame.Tick + 1), new SimulationRate(TicksPerSecond));
+            state = driver.Simulate(state, input, [], context, attributes, capabilities).State;
+        }
+
+        return state.Kinematic;
     }
 
     /// <summary>Horizontal distance covered over 60 frames of unobstructed walking.</summary>

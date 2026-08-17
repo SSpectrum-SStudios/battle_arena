@@ -164,13 +164,23 @@ try {
         -GodotExecutable $GodotExecutable `
         -Port $v2Port
 
+    # In-engine collision adapter gate (P5B-01). The motor's unit tests all run
+    # against DeterministicCollisionWorld, which approximates the capsule as a
+    # box, so they cannot see engine-boundary defects. This gate found three,
+    # including a character permanently stuck on a 0.25 m step while every unit
+    # test passed. It runs here so a motor change cannot reach a playtest without
+    # being exercised against the real PhysicsServer3D.
+    & (Join-Path $PSScriptRoot "run_kinematic_collision_world_probe.ps1") `
+        -GodotExecutable $GodotExecutable `
+        -SkipBuild
+
     $threePlayerPort = if ($Port -lt 65535) { $Port + 1 } else { $Port - 1 }
     & (Join-Path $PSScriptRoot "verify_three_player_movement.ps1") `
         -GodotExecutable $GodotExecutable `
         -Port $threePlayerPort `
         -SkipBuild
 
-    Write-Host "Multiplayer parity gate passed: build, core tests, protocol tests, authority-only fallback, V2 exact-scheduling smoke, three-player movement, prediction, attack, and authoritative damage."
+    Write-Host "Multiplayer parity gate passed: build, core tests, protocol tests, authority-only fallback, V2 exact-scheduling smoke, in-engine collision adapter, three-player movement, prediction, attack, and authoritative damage."
 }
 finally {
     foreach ($process in @($clientProcess, $hostProcess)) {
