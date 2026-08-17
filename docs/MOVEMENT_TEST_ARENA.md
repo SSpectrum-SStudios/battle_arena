@@ -130,3 +130,46 @@ Under `ExplicitQueryMotor` the node is positioned *from* simulation each frame
 and nothing reads the body transform back into state. That inversion is the point
 of the phase: it is what allows a past frame to be restored and resimulated
 without moving the character the player is looking at.
+
+## Headless gates over this arena
+
+Two probes run this course without a window, both wired into
+`tools/testing/verify_multiplayer_parity.ps1`.
+
+`res://scenes/movement/movement_motor_parity_probe.tscn` (P5B-02) drives both
+motors over the course and compares what a player perceives: top run and sprint
+speed, frames to reach top speed, braking distance, jump apex and airtime, ledge
+climb height, crouched versus standing travel under a low tunnel, roll distance,
+and forward travel plus lateral deflection against a slalom obstacle. Run it with
+`tools/testing/run_movement_motor_parity.ps1`.
+
+It does not assert per-frame position parity over a long trace. Both motors are
+closed loops over different collision algorithms, so divergence compounds and any
+tolerance wide enough to pass a long trace is wide enough to hide a regression.
+Instead it gates the *path* at the best of five frame alignments and gates the
+*phase* separately at one frame — the two motors are one frame out of phase by
+integration order, and separating those questions is what keeps the gate
+meaningful.
+
+`res://scenes/movement/movement_motor_cost_probe.tscn` (P5B-03) measures the
+explicit motor's query count and microseconds per frame at replay depths from 1 to
+32, over open ground and a hostile corner, and fails when the 95th percentile
+exceeds a quarter of a 60 Hz frame at or below the supported replay depth. Run it
+with `tools/testing/run_movement_motor_cost.ps1`.
+
+### Which stations actually have collision
+
+Worth knowing before writing a gate against this course, because two stations do
+not test what their names suggest:
+
+- **The visible stair flight has no collision.** Every step in `BuildStairs` is
+  created with `collisionEnabled: false`; the only collider is a smooth
+  15-degree traversal ramp. A "stair climb" measured there is a walk up a slope
+  and exercises no step solver at all. The parity probe's climb station uses the
+  **0.35 m box ledge** at Z = 32 instead, which is a real step under the 0.4 m
+  step height.
+- **The slalom leaves a clear corridor down the middle.** With a 0.42 m capsule
+  against 0.55 m cylinders at X = -12 and X = -8, a character running down X ≈
+  -10.5 touches nothing. An obstacle gate has to be spawned on the obstacle line,
+  and slightly off its axis — dead-centre gives a head-on stop with no lateral
+  deflection at all.

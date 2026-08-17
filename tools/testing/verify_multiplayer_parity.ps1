@@ -174,13 +174,25 @@ try {
         -GodotExecutable $GodotExecutable `
         -SkipBuild
 
+    # Motor parity (P5B-02) and replay cost (P5B-03). Parity is what keeps the
+    # explicit motor from drifting from accepted feel once corrections are live,
+    # where a motor bug stops looking like a motor bug and starts looking like a
+    # network correction. Cost is what keeps Phase 6's replay-depth cap honest:
+    # the supported depth is derived from a measurement here, not chosen.
+    & (Join-Path $PSScriptRoot "run_movement_motor_parity.ps1") `
+        -GodotExecutable $GodotExecutable `
+        -SkipBuild
+    & (Join-Path $PSScriptRoot "run_movement_motor_cost.ps1") `
+        -GodotExecutable $GodotExecutable `
+        -SkipBuild
+
     $threePlayerPort = if ($Port -lt 65535) { $Port + 1 } else { $Port - 1 }
     & (Join-Path $PSScriptRoot "verify_three_player_movement.ps1") `
         -GodotExecutable $GodotExecutable `
         -Port $threePlayerPort `
         -SkipBuild
 
-    Write-Host "Multiplayer parity gate passed: build, core tests, protocol tests, authority-only fallback, V2 exact-scheduling smoke, in-engine collision adapter, three-player movement, prediction, attack, and authoritative damage."
+    Write-Host "Multiplayer parity gate passed: build, core tests, protocol tests, authority-only fallback, V2 exact-scheduling smoke, in-engine collision adapter, motor parity, replay cost, three-player movement, prediction, attack, and authoritative damage."
 }
 finally {
     foreach ($process in @($clientProcess, $hostProcess)) {

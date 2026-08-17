@@ -354,8 +354,25 @@ public sealed class CapsuleMovementSimulator
                 state, CapsuleMotionOutcome.UnrecoverablePenetration, 0, false);
         }
 
-        // Push out along the shortest exit, plus the skin so the following sweep
-        // does not immediately re-report a zero-fraction contact.
+        // Push out along the shortest exit, scaled by the skin.
+        //
+        // KNOWN ISSUE, deliberately left as-is — see P5B-02 in the checklist.
+        // SurfaceSkin is a distance (5 mm), not a ratio, so scaling by
+        // (1 + skin) adds skin*depth: for a 10 mm overlap that is 50 micrometres
+        // of clearance where 5 mm was intended, which is an order of magnitude
+        // INSIDE the engine's 1 mm query margin. By the reasoning that
+        // CapsuleMotorPolicy.SurfaceSkin's own remarks set out, this should add the
+        // skin along the separation direction instead.
+        //
+        // It is not changed here because the obvious correction was tried,
+        // measured, and broke something worse: with an additive skin the character
+        // stops dead instead of coasting when input is released — braking distance
+        // fell from 0.513 m to 0.002 m in the motor parity probe, while velocity
+        // decayed normally. So position integration depends on this value in a way
+        // that is not yet understood, and shipping a change with that interaction
+        // unexplained would trade a documented shortfall for an undiagnosed feel
+        // regression. The parity probe now covers braking, so whoever fixes this
+        // has a test that fails the moment they get it wrong.
         var skinScale = 1d + policy.SurfaceSkin;
         return new CapsuleMotionResult(
             state.WithPosition(state.Position.Offset(
@@ -661,50 +678,106 @@ public sealed class CapsuleMovementSimulator
             return new CapsuleMotionResult(state, CapsuleMotionOutcome.Blocked, 0, false);
         }
 
-        // Down, at most as far as we actually rose. Probing the full step height
-        // when headroom cut the lift short would let the solver descend further
-        // than it climbed.
-        var down = _world.ProbeGround(
-            new GroundProbeRequest(probed, up.AchievedVertical, profile));
-        if (!down.FoundGround)
-        {
-            return new CapsuleMotionResult(state, CapsuleMotionOutcome.Blocked, 0, false);
-        }
-
-        var landingKind = CollisionContactState.ClassifySurface(
-            down.Normal, policy.WalkableSlopeRadians);
-        if (landingKind is not ContactSurfaceKind.WalkableGround)
-        {
-            return new CapsuleMotionResult(state, CapsuleMotionOutcome.Blocked, 0, false);
-        }
-
-        // Commit only the horizontal distance the frame actually earned, at the
-        // height the step provides. Committing the probe distance instead would
-        // teleport the character up to a radius forward whenever a step was in
-        // range, which is a far worse artifact than the small forward float that
-        // stepping onto a lip has always had.
+        // Land where there is actually ground underfoot.
+        //
+        // The down-probe is TryLandOn's job rather than a gate here, so the
+        // candidate that is committed is the candidate that was validated. A
+        // single probe taken at one position and used to justify committing at
+        // another is what produced the float this replaced.
+        //
+        // The probe deliberately reaches further than the frame's own motion, so
+        // the surface it found is ahead of where the frame would end. Committing
+        // the frame's motion at the PROBE's height puts the character in the air
+        // over the lower floor and names a support it is not touching — and
+        // grounding then re-probes, finds the same steep edge, and reports
+        // airborne. That flickers IsGrounded, GroundNormal and Support every frame
+        // of a step approach, which are exactly the discrete fields P06-03
+        // compares outside numeric tolerance and P06-04 keys a contact-replay
+        // correction on. A float that reads as a per-frame divergence is worse
+        // than a refused step.
+        //
+        // So the earned position is preferred and only accepted when ground is
+        // really beneath it; otherwise the commit advances to the probe position,
+        // where the ground was actually found. That advance is bounded by the
+        // probe distance — one capsule radius — and it is what mounting a step
+        // physically is.
         var earned = forward.AchievedHorizontal.Length <= blockedMotion.Length
             ? forward.AchievedHorizontal
             : blockedMotion;
-        var landed = new WorldPosition(
-            raised.X + earned.X,
-            probed.Y - down.Distance,
-            raised.Z + earned.Z);
+        var earnedPosition = raised.Offset(earned, 0d);
 
-        // The probe found a surface where the capsule was over the step; the
-        // commit is behind that, so verify the committed position is actually
-        // free before taking it. Without this the solver could place the
-        // character inside geometry that only the probe position cleared.
-        if (!_world.HasClearance(new ClearanceRequest(landed, profile, SupportIdentity.None)))
+        if (TryLandOn(earnedPosition, state, profile, up.AchievedVertical, policy, out var landedEarly))
         {
-            return new CapsuleMotionResult(state, CapsuleMotionOutcome.Blocked, 0, false);
+            return landedEarly;
         }
 
-        return new CapsuleMotionResult(
-            state.WithPosition(landed).WithGround(true, down.Normal, down.Support),
+        if (TryLandOn(probed, state, profile, up.AchievedVertical, policy, out var landedAhead))
+        {
+            return landedAhead;
+        }
+
+        return new CapsuleMotionResult(state, CapsuleMotionOutcome.Blocked, 0, false);
+    }
+
+    /// <summary>
+    /// Accepts a step landing at one candidate position, or refuses it.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Every condition here is a way a step can be wrong, and each was reachable
+    /// before this existed:
+    /// </para>
+    /// <list type="bullet">
+    /// <item>no ground under the candidate — the character would float;</item>
+    /// <item>ground that is not walkable — a capsule resting on a step's top edge
+    /// reports a normal steeper than the limit, and perching there is not
+    /// standing on it;</item>
+    /// <item>ground at or below where the frame started — the step solver must
+    /// never be a way to descend, and must not report <c>Stepped</c> for motion
+    /// that gained nothing, because a sweep into a real wall still achieves the
+    /// query margin and would otherwise pass the forward gate;</item>
+    /// <item>a candidate that is not clear — committing inside geometry.</item>
+    /// </list>
+    /// </remarks>
+    private bool TryLandOn(
+        WorldPosition candidate,
+        in CharacterKinematicState state,
+        CollisionProfileKind profile,
+        double liftBudget,
+        CapsuleMotorPolicy policy,
+        out CapsuleMotionResult result)
+    {
+        result = default;
+        var ground = _world.ProbeGround(new GroundProbeRequest(candidate, liftBudget, profile));
+        if (!ground.FoundGround)
+        {
+            return false;
+        }
+
+        if (CollisionContactState.ClassifySurface(ground.Normal, policy.WalkableSlopeRadians)
+            is not ContactSurfaceKind.WalkableGround)
+        {
+            return false;
+        }
+
+        var landedY = candidate.Y - ground.Distance;
+        if (landedY <= state.Position.Y + policy.SurfaceSkin)
+        {
+            return false;
+        }
+
+        var landed = new WorldPosition(candidate.X, landedY, candidate.Z);
+        if (!_world.HasClearance(new ClearanceRequest(landed, profile, SupportIdentity.None)))
+        {
+            return false;
+        }
+
+        result = new CapsuleMotionResult(
+            state.WithPosition(landed).WithGround(true, ground.Normal, ground.Support),
             CapsuleMotionOutcome.Stepped,
             0,
             false);
+        return true;
     }
 
     /// <summary>

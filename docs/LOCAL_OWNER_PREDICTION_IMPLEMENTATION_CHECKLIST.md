@@ -1602,8 +1602,15 @@ frozen wrongly. Running 5B first is right, with `VerifyAgreesWithDeterministicWo
 the load-bearing case, since it converts every motor unit test against the fake
 into evidence about the real engine.
 
-- [ ] **P6-00 — Store contact facts in the rewind unit.**
-  - Status: **Stubs Reviewed**.
+- [x] **P6-00 — Store contact facts in the rewind unit.**
+  - Status: **Implemented And Reviewed.** The checkbox was stale — the work landed
+    in `dc24b53` and the implementation critic flagged the mismatch.
+  - Coverage landed in `CharacterMovementSimulatorTests.cs`
+    (`ContactsAreRecordedAndSurviveRestoreAndReplayIdentically`,
+    `TheSupportingSurfaceIsAmongTheRecordedContacts`) rather than the
+    `CharacterSimulationStateTests.cs` named below, because the property worth
+    asserting is that contacts survive a real restore-and-replay through the
+    simulator, not that a struct round-trips.
   - Purpose: P05-01 promised "stable contact facts in replayable value state",
     and `CollisionContactState` exists only as scratch inside the motor.
     Contacts are derivable, so this is not a determinism break — but P06-01
@@ -1733,10 +1740,172 @@ into evidence about the real engine.
     what made the step defect look like a harness artifact; the driver run
     settled it, showing the engine stuck at X=1.628 where the reference reached
     X=5.6. Both now reach X=5.6.
+  - **The implementation critic found the step fix itself was still wrong, and it
+    was right.** The first version probed a capsule radius ahead to find the
+    step's walkable top, then committed the frame's much shorter motion at *that*
+    height. For the exact geometry the fix was written for, the character was
+    placed at X = 1.669 with Y = 0.25 while the real ground there is Y = 0 — 0.25 m
+    in the air, 0.33 m behind the step face, reporting the step as its support
+    while resting on nothing. `ResolveGrounding` then re-probed, found the same
+    53-degree edge, and returned airborne. So the climb worked by "float, be
+    declared airborne, fall, repeat" rather than by stepping, and `IsGrounded`,
+    `GroundNormal` and `Support` flickered on every frame of a step approach.
+    Those are exactly the discrete fields P06-03 compares outside numeric
+    tolerance and P06-04 keys a contact-replay correction on, so the first fix
+    manufactured a per-frame discrete mismatch on every staircase.
+  - Fixed by validating each candidate landing where it will actually be
+    committed (`TryLandOn`): ground present, walkable, strictly above the frame's
+    start height, and clear. The earned position is preferred, and only when it
+    has no ground does the commit advance to the probe position where ground was
+    actually found — bounded by one capsule radius. A single probe taken at one
+    position and used to justify committing at another is the mistake, and it is
+    now structurally impossible.
+  - The height-gain requirement also fixes a misreported outcome the critic
+    spotted: a sweep into a real wall still achieves the engine's query margin,
+    which exceeds the motion epsilon, so the forward-progress gate alone did not
+    stop a wall being reported as `Stepped`. `CapsuleMotionOutcome` is a canonical
+    comparison field, so a misreported outcome is a divergence.
+  - Two of the four regression tests had to be rewritten because they encoded the
+    float: `TheStepCommitsOnlyTheMotionTheFrameEarned...` literally asserted the
+    bad committed position. They now assert the property instead — the world is
+    asked what lies beneath wherever the character was placed. That is the risk of
+    writing a test from the implementation rather than from the requirement, and
+    it is worth recording that the tests passed while the behaviour was wrong.
+  - **Known regression introduced by the widened probe, recorded not fixed:** a
+    climbable ledge shallower than one capsule radius plus skin (about 0.425 m
+    deep) with a drop behind it can no longer be stepped onto, because the forward
+    probe overshoots its top and the down-probe finds nothing. Nothing in the
+    arena hits this today. Closing it needs the probe to sample at more than one
+    distance, which is more per-frame queries, so it belongs with the cost budget
+    P5B-03 established rather than being added blind.
+  - **Two further findings recorded rather than fixed here**, both real and both
+    needing more care than the end of this phase allows:
+    1. *The adapter gives every reported contact the same travel fraction.*
+       `CollisionContactState.CompareForStableResolution` sorts on travel fraction
+       first, so in-engine the primary key is constant and the real ordering
+       becomes the tie-break — a raw physics-server RID. `FirstOpposing` therefore
+       returns the lowest-RID opposing contact rather than the earliest one, and in
+       a floor/wall concave corner which surface wins depends on scene
+       instantiation order. That is precisely the kind of difference P06-12's
+       cross-process trace parity would be asked to explain. Fixing it means
+       changing the comparer's primary key to something the adapter can actually
+       supply, which is a determinism change touching every motor test.
+    2. *`ReportQuerySettings` prints a throwaway parameters object's defaults*
+       rather than the adapter's own `_parameters`, so it cannot detect the adapter
+       changing its margin — the drift it exists to make visible. `Margin` is also
+       never set explicitly anywhere in the adapter, and `CollideSeparationRay` is
+       not reported at all, both of which this item's verification text promises.
   - Blocking note resolved: this has landed, so P06-11 is unblocked.
 
-- [ ] **P5B-02 — Prove the explicit motor matches the legacy motor in the arena.**
-  - Status: **Stubs Reviewed**.
+- [x] **P5B-02 — Prove the explicit motor matches the legacy motor in the arena.**
+  - Status: **Implemented And Reviewed.** Gate green and wired into
+    `verify_multiplayer_parity.ps1`.
+  - **Result: the motors agree on feel, closely.** Measured over the real arena
+    course: top run speed 6.000 vs 6.000 m/s, top sprint 12.500 vs 12.500,
+    frames to 95% run speed 21 vs 21, braking distance 0.513 vs 0.513 m, roll
+    distance 10.090 vs 10.090 m, jump apex 3.970 vs 3.975 m, ledge height gained
+    0.307 vs 0.302 m, crouched tunnel travel 7.244 vs 7.243 m, standing tunnel
+    travel 1.580 vs 1.581 m, obstacle forward travel 16.289 vs 16.193 m,
+    obstacle lateral deflection 0.573 vs 0.572 m. Jump airtime is the loosest at
+    64 vs 61 frames.
+  - **The implementation critic found this probe's first version was largely
+    measuring open ground, and it was right.** Three of the seven gated metrics
+    never touched the geometry they were named for, and each would have passed
+    with the corresponding motor behaviour completely broken:
+    1. *"Obstacle slide travel" never contacted an obstacle.* Spawned at
+       X = -10.55 against 0.55 m cylinders at X = -12 and X = -8 with a 0.42 m
+       capsule, which leaves a 0.48 m clear corridor down the whole slalom. It
+       measured three seconds of unobstructed running. Worse, it would have been
+       *greener* if both motors had tunnelled straight through the cylinders,
+       because the two would then have agreed exactly. Now spawned on the
+       obstacle line and slightly off its axis — dead-centre produces a head-on
+       stop with zero lateral deflection, which the first corrected version
+       measured and failed on — and lateral deflection is now asserted, because
+       it is the only evidence the obstacle was touched at all.
+    2. *The crouch metric ran seven metres from the nearest ceiling.* It compared
+       crouched top speed across flat ground and called it clearance; profile
+       switching could have been entirely broken. Now run at the arena's low
+       tunnel and asserted as a **pair**: crouched travel 7.24 m against standing
+       travel 1.58 m. The standing run is what gives the crouched run meaning —
+       without it, a motor ignoring the ceiling in both postures shows identical
+       travel and passes.
+    3. *The "stair climb" gate — written explicitly as the regression guard for
+       P5B-01's step defect — ran over a ramp.* Every visible stair in
+       `MovementTestCourse` is built with `collisionEnabled: false`; the only
+       collider on that path is a smooth 15-degree traversal ramp, so `SolveStep`
+       was never invoked and the guard would have stayed green with the step
+       solver reverted. Now run against the 0.35 m box ledge at Z = 32, with an
+       absolute floor on **both** motors so a shared regression cannot hide
+       behind the comparison.
+  - **Finding: the motors are exactly one frame out of phase.** Same-frame
+    horizontal position disagreed by 0.126 m, which collapses to 0.026 m when
+    the traces are compared at a one-frame offset — so the character follows the
+    same path, one frame apart, rather than a different path. Ruled out as a
+    probe artifact by rewiring the probe to drive the explicit motor exactly as
+    `MovementTestPlayer` does (the command's own tick as the step context); the
+    offset was unchanged, so it is a property of the motors' integration order.
+    Accepted rather than repaired: forcing the explicit motor to phase-match a
+    motor that is being retired would be the wrong direction of repair.
+  - **This phase difference is a Phase 6 constraint, not just a note.**
+    Reconciliation compares an owner's predicted frame against authority's
+    answer for the *same* frame. A one-frame phase error anywhere in that path
+    reads as a divergence on every frame and would correct the player
+    continuously. P06-03 and P06-06 must be checked against this explicitly.
+  - The gate therefore separates two questions that a same-frame comparison
+    conflates: the *path* is gated at the best alignment, and the *phase* is
+    gated at one frame. A two-frame drift, or a path that diverges however it is
+    aligned, both still fail. Vertical settling at spawn is reported but not
+    gated — the legacy body falls the spawn gap and `MoveAndSlide` stops it while
+    the explicit motor snaps to its skin distance, so the first frames differ by
+    construction.
+  - Defect found in the probe itself and fixed: the first version collapsed four
+    fields into one distance magnitude, which cannot tell vertical spawn settling
+    apart from a horizontal speed difference. That is the averaging-away this
+    item's own verification text warns against, and it made a 1.5 m/s vertical
+    settling artifact look like a motor failure. Now reported per field.
+  - Further critic findings on this item, all fixed:
+    - *The shared-window velocity gate did not exist.*
+      `SharedWindowVelocityTolerance` was declared and never read, so of the four
+      fields the probe carefully separated, exactly one was enforced. A motor
+      producing correct positions with wrong velocities passed silently — which
+      is precisely what a broken velocity projection produces, and that
+      projection exists because a character pressed into a wall that keeps full
+      speed corrupts the jump speed bonus and the roll entry gate. Velocity is
+      now gated at the same alignment as position.
+    - *Most of the scripted trace was unreachable.* `ScriptedInput` scripted a
+      jump at frame 90, a crouch at 130 and a roll at 200, but its only caller
+      runs 30 frames. Every branch past frame 30 was dead, which read as far
+      broader coverage than existed. The trace is now only what it is — a forward
+      walk with sprint — and the behaviour list is covered by targeted stations,
+      each spawned at the geometry it needs. One long continuous trace cannot
+      deliver that list: by the time it reached its roll the two motors would be
+      metres apart for reasons unrelated to rolling.
+    - *Jump airtime compared two different definitions of "grounded"* — a
+      locomotion mode on the legacy side against the kinematic flag on the
+      explicit side, and the mode lags the flag by the rule simulator's
+      transition. The tolerance had been set just above that definitional
+      mismatch. Both sides now read `LocomotionMode`.
+  - **Named accepted difference: jump airtime differs by 3 frames** (64 legacy,
+    61 explicit) with the apex agreeing to 5 mm. Real rather than definitional
+    after the fix above, and consistent with the one-frame integration phase
+    difference plus a grounding-threshold difference at each end of the arc.
+    Gated at 4 frames.
+  - **Open production issue this item surfaced and could not safely close:
+    `RecoverPenetration` scales the depenetration push by `1 + SurfaceSkin`
+    instead of adding the skin along the separation direction.** `SurfaceSkin` is
+    a distance, so for a 10 mm overlap the correction adds 50 micrometres of
+    clearance where 5 mm was intended — an order of magnitude *inside* the
+    engine's 1 mm query margin, which is the same class of defect as P5B-01's
+    engine defect #2 and contradicts `CapsuleMotorPolicy.SurfaceSkin`'s own
+    documented invariant. The obvious correction was implemented and measured,
+    and it broke something worse: with an additive skin the character stops dead
+    instead of coasting when input is released — **braking distance fell from
+    0.513 m to 0.002 m while velocity decayed normally**, meaning position
+    integration depends on this value in a way that is not yet understood. It is
+    therefore left as-is with the reasoning recorded in the code, rather than
+    trading a documented shortfall for an undiagnosed feel regression. The
+    braking metric added here is the test that now fails the moment someone gets
+    this wrong.
   - Purpose: P05-16 supplies the switch but nothing compares the two motors.
     Both read the same authored `movement.json`, so a scripted input trace run
     through each should produce closely matching motion — and where it does not,
@@ -1746,12 +1915,99 @@ into evidence about the real engine.
     `run_movement_motor_parity.ps1`, `MOVEMENT_TEST_ARENA.md`.
   - Verification: One scripted trace covering flat running, sprint, a wall
     slide, a stair climb, a jump arc, a crouch passage, and a roll runs under
-    both motors headlessly; per-frame position and velocity divergence stays
-    inside an authored tolerance, and any excursion is reported with its frame
-    and field rather than averaged away.
+    both motors headlessly; divergence stays inside an authored tolerance, and
+    any excursion is reported with its frame and field rather than averaged
+    away.
+  - **Design decision recorded before implementing: what "matches" is asserted
+    as.** The reviewed stub implied per-frame position parity across the whole
+    trace. That assertion cannot hold and would be dishonest to author, so it is
+    replaced deliberately rather than quietly tuned:
+    1. *Both motors are closed loops over different collision algorithms.* Any
+       difference on frame N changes the input state of frame N+1, so divergence
+       compounds. Over a 900-frame trace the two will separate by metres no
+       matter how correct both are. A per-frame tolerance wide enough to pass
+       such a trace is wide enough to hide a real regression, so the number
+       would be chosen to make the gate green — which is the failure mode this
+       whole probe exists to avoid.
+    2. *Re-seeding at segment boundaries was considered and rejected.* Seeding
+       the explicit motor from legacy state each segment would keep the
+       comparison honest, but only one direction of conversion exists
+       (`CharacterSimulationState.ToRuntimeState`). The reverse is lossy —
+       runtime state carries no contacts, no support identity, and no movement
+       sources — so it would need new production surface built solely for a
+       probe, and every reconstructed field would be a guess the comparison then
+       depends on.
+    3. *What is asserted instead.* Feel-level quantities, which are what a
+       player actually perceives and what a tuning regression actually moves:
+       top run and sprint speed, time to reach top speed, braking distance,
+       jump apex and airtime, stair-climb completion and time, crouch clearance
+       height, and roll distance and duration. Each is measured under both
+       motors and must agree inside a per-metric authored tolerance, reported as
+       a measured pair rather than a pass bit.
+    4. *Plus a short shared-spawn window.* The first 30 frames from an identical
+       spawn are compared per frame on position and velocity, where divergence
+       has not yet compounded. This is what catches a gross immediate
+       difference, and it is the part of the original per-frame intent that is
+       actually measurable.
+  - Scope limit inherited from the stub and still true: the trace contains no
+    attack, because attack movement influence is unauthored until P05-18. The
+    result means "the motors agree with no attack step active" and must not be
+    read as "the motors agree".
 
-- [ ] **P5B-03 — Measure the explicit motor's real per-frame query cost.**
-  - Status: **Stubs Reviewed**.
+- [x] **P5B-03 — Measure the explicit motor's real per-frame query cost.**
+  - Status: **Implemented And Reviewed.** Gate green and wired into
+    `verify_multiplayer_parity.ps1`.
+  - **Result: the budget is crossed between replay depth 12 and 16. The supported
+    cap is set to 8 as a deliberately conservative choice.** Budget is 4166.7 us
+    per frame, a quarter of a 60 Hz frame. Over the hostile geometry:
+
+    | depth | queries/frame | mean | p95 | share of budget |
+    | --- | --- | --- | --- | --- |
+    | 1 | 8 | 235 us | 314 us | 8% |
+    | 4 | 32 | 936 us | 1103 us | 26% |
+    | 8 | 64 | 1938 us | 2137 us | 51% |
+    | 12 | 96 | 2999 us | 3476 us | 83% |
+    | 16 | 128 | 3952 us | 4260 us | 102% |
+    | 20 | 160 | 4845 us | 5184 us | 124% |
+    | 32 | 256 | 7568 us | 8190 us | 197% |
+
+  - **The critic caught the original conclusion being unsupported, and it was
+    right.** The first version measured depths 1, 8 and 32 only, then declared the
+    supported depth to be 8 "because that is what the measurement supports and 32
+    is not". Eight was simply the largest sampled depth that passed; "32 is
+    unaffordable" argues against 32 and is not evidence for 8. The curve is close
+    to linear at roughly 240 us per depth, so the real limit was around 16 and
+    nobody could have seen that from three samples. Intermediate depths are now
+    measured, and the cap is held at 8 for a stated reason — 51% of budget against
+    83% at depth 12, on a development machine rather than the slowest that will
+    run the game — rather than being presented as the limit.
+  - The probe now fails if this constant drifts in **either** direction: above what
+    is affordable, or below half of it. Too low is also a defect — Phase 6 would
+    quietly give up correction quality for no reason — and either way the constant
+    and the evidence must not silently disagree.
+  - Added guard against a vacuous measurement: a scenario issuing fewer than three
+    queries per simulated frame fails. The hostile spawn sits close to
+    `MaximumRecoverablePenetration`, and if it ever crossed it the motor would bail
+    out of `RecoverPenetration` after one query per frame and the gate would go
+    green having timed almost no work.
+  - **Constraint on Phase 6: `OwnerPredictionWorkPolicy`'s replay-depth cap must
+    not exceed 8.** P06-07 and P11-04 must honour it rather than choosing a cap by
+    intuition.
+  - Per-query cost is higher than P01-11's headline figure: about 21 us on open
+    ground and 29 us in a corner, against the 10.8 us a single isolated query
+    measured. Worth knowing before anyone budgets from the older number.
+  - Depths above the supported cap are measured and reported but deliberately not
+    gated. A gate that fails by design is a gate everyone learns to ignore, and
+    the evidence for *why* the cap is 8 is more useful than the cap alone — a
+    future optimisation that makes 32 affordable will show up here first.
+  - The gate enforces the 95th percentile rather than the single worst frame. The
+    worst frame in a headless probe is dominated by collection pauses, not query
+    cost: at depth 1 over open ground it measured 3178 us against a 134 us mean,
+    which is a GC pause and not twenty-four times the work. Gating on that would
+    be flaky, and a flaky gate gets disabled. Mean and true worst are both still
+    reported so a genuine spike stays visible.
+  - Queries are counted by a decorator around the production adapter rather than
+    a counter inside it, so the measured motor is byte-for-byte the shipped one.
   - Purpose: P01-11 measured the *probe's* query cost, not the motor's. The
     motor issues several queries per frame — recovery, sweep, per-slide-iteration
     re-sweep, ground probe, and up to three more for a step — so the real budget

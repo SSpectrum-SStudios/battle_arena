@@ -58,11 +58,16 @@ public sealed class CapsuleStepCornerTests
     }
 
     [Fact]
-    public void TheStepCommitsOnlyTheMotionTheFrameEarnedRatherThanTheProbeDistance()
+    public void TheStepNeverCommitsToAPositionWithNoGroundBeneathIt()
     {
-        // The probe must reach past the face to find the walkable top, but
-        // committing that distance would teleport the character up to a radius
-        // forward whenever a step came into range.
+        // The defect this replaces: the solver probed a capsule radius ahead to
+        // find the step's walkable top, then committed the frame's much shorter
+        // motion at THAT height. The character ended up 0.25 m in the air, 0.33 m
+        // behind the step face, reporting the step as its support while resting on
+        // nothing — and grounding then re-probed, found the same steep edge, and
+        // called it airborne. IsGrounded, GroundNormal and Support flickered every
+        // frame of a step approach, which P06-03 compares as discrete fields
+        // outside numeric tolerance.
         var world = new EdgeContactWorld();
         var motor = new CapsuleMovementSimulator(world);
         var contactX = StepFaceX - Math.Sqrt((Radius * Radius) - ((Radius - StepTopY) * (Radius - StepTopY)));
@@ -76,11 +81,48 @@ public sealed class CapsuleStepCornerTests
             CapsuleMotorPolicy.TestDefault);
 
         Assert.Equal(CapsuleMotionOutcome.Stepped, result.Outcome);
-        Assert.Equal(contactX + 0.04d, result.State.Position.X, precision: 4);
         Assert.True(
             world.LongestForwardProbe > 0.3d,
             $"The forward probe only reached {world.LongestForwardProbe:0.###} m, so it never " +
             "cleared the step face and the test is not exercising the defect.");
+
+        // The committed position must have walkable ground immediately beneath it.
+        // This is the property, not a particular X: ask the world what is under
+        // where the character was actually placed.
+        var landed = result.State.Position;
+        var beneath = world.ProbeGround(new GroundProbeRequest(
+            landed, CapsuleMotorPolicy.TestDefault.MaximumStepHeight, CollisionProfileKind.Standing));
+        Assert.True(beneath.FoundGround, "The step landed somewhere with no ground below it.");
+        Assert.True(
+            beneath.Distance <= CapsuleMotorPolicy.TestDefault.SurfaceSkin + 1e-6d,
+            $"The step left the character floating {beneath.Distance:0.####} m above its support.");
+        Assert.Equal(
+            ContactSurfaceKind.WalkableGround,
+            CollisionContactState.ClassifySurface(
+                beneath.Normal, CapsuleMotorPolicy.TestDefault.WalkableSlopeRadians));
+    }
+
+    [Fact]
+    public void TheStepNeverDescendsOrReportsSteppedWithoutGainingHeight()
+    {
+        // A sweep into a real wall still achieves the engine's query margin, which
+        // is greater than the motion epsilon, so the forward gate alone does not
+        // stop a wall from being reported as a step. Requiring real height gain is
+        // what makes Stepped and Blocked distinguishable — and CapsuleMotionOutcome
+        // is a canonical comparison field, so a misreported outcome is a divergence.
+        var world = new EdgeContactWorld { FlatGroundOnly = true };
+        var motor = new CapsuleMovementSimulator(world);
+        var state = CharacterKinematicState.AtRest(new WorldPosition(1.5d, 0d, 0d), 0d);
+
+        var result = motor.SolveStep(
+            state,
+            CollisionProfileKind.Standing,
+            new HorizontalVector(0.04d, 0d),
+            Profiles,
+            CapsuleMotorPolicy.TestDefault);
+
+        Assert.Equal(CapsuleMotionOutcome.Blocked, result.Outcome);
+        Assert.Equal(0d, result.State.Position.Y, precision: 6);
     }
 
     [Fact]
@@ -105,12 +147,12 @@ public sealed class CapsuleStepCornerTests
     }
 
     [Fact]
-    public void AStepIsRefusedWhenTheCommittedLandingIsNotClear()
+    public void AStepIsRefusedWhenNoCandidateLandingIsClear()
     {
-        // The probe position cleared, but the position actually committed is
-        // behind it. Committing without re-checking would place the character
-        // inside geometry only the probe position escaped.
-        var world = new EdgeContactWorld { CommittedLandingBlocked = true };
+        // Each candidate landing is validated where it will be committed, so a
+        // world that refuses clearance everywhere must produce no step at all
+        // rather than one placed inside geometry.
+        var world = new EdgeContactWorld { AllLandingsBlocked = true };
         var motor = new CapsuleMovementSimulator(world);
         var contactX = StepFaceX - Math.Sqrt((Radius * Radius) - ((Radius - StepTopY) * (Radius - StepTopY)));
         var state = CharacterKinematicState.AtRest(new WorldPosition(contactX, 0d, 0d), 0d);
@@ -141,8 +183,11 @@ public sealed class CapsuleStepCornerTests
         /// <summary>Treat the obstacle as a full-height wall with no walkable top.</summary>
         public bool WallInsteadOfStep { get; init; }
 
-        /// <summary>Refuse clearance at the committed landing, but not at the probe.</summary>
-        public bool CommittedLandingBlocked { get; init; }
+        /// <summary>Nothing but flat floor: no step to climb, so no height to gain.</summary>
+        public bool FlatGroundOnly { get; init; }
+
+        /// <summary>Refuse clearance everywhere, so no candidate landing is legal.</summary>
+        public bool AllLandingsBlocked { get; init; }
 
         /// <summary>The furthest horizontal distance any sweep was asked to travel.</summary>
         public double LongestForwardProbe { get; private set; }
@@ -158,7 +203,15 @@ public sealed class CapsuleStepCornerTests
             }
 
             // Raised above the step, horizontal travel is unobstructed. Below the
-            // top, the face blocks. A wall blocks at every height.
+            // top, the face blocks. A wall blocks at every height. Flat ground
+            // never blocks, but still yields the query margin, which is what makes
+            // the height-gain requirement necessary.
+            if (FlatGroundOnly)
+            {
+                return new CapsuleSweepResult(
+                    request.HorizontalMotion, request.VerticalMotion, HorizontalVector.Zero, 0d, 0);
+            }
+
             var blocks = WallInsteadOfStep || request.Origin.Y < StepTopY;
             if (!blocks || request.HorizontalMotion.X <= 0d)
             {
@@ -185,7 +238,7 @@ public sealed class CapsuleStepCornerTests
 
         public GroundProbeResult ProbeGround(in GroundProbeRequest request)
         {
-            if (WallInsteadOfStep)
+            if (WallInsteadOfStep || FlatGroundOnly)
             {
                 // Only the lower floor exists.
                 return Floor(request);
@@ -227,8 +280,7 @@ public sealed class CapsuleStepCornerTests
         public OverlapResolution ResolveOverlap(in ClearanceRequest request) =>
             OverlapResolution.None;
 
-        public bool HasClearance(in ClearanceRequest request) =>
-            !CommittedLandingBlocked || request.Origin.X >= StepFaceX;
+        public bool HasClearance(in ClearanceRequest request) => !AllLandingsBlocked;
 
         public bool TryGetSupportMotion(
             SupportIdentity support,
