@@ -2485,6 +2485,32 @@ forced when it is a decision.
     headless or instrumented check that a reliable backlog does not delay unreliable
     movement; the authority transport runs over Steam with ENet retained as the
     local harness.
+  - **BLOCKED on the GodotSteam C# binding, found while implementing.** The binding
+    in `addons/godotsteam_csharpbindings` exposes
+    `ConfigureConnectionLanes(connection, lanes, priorities, weights)` — but its
+    `SendMessages(int messages, byte[] data, uint connectionHandle, long flags)` has
+    **no lane index parameter**, and `SendMessageToConnection` always uses lane 0.
+    In Steamworks the lane is assigned per message through
+    `SteamNetworkingMessage_t::m_idxLane`, so without lane-indexed sending,
+    configuring lanes is inert — the call would succeed and change nothing, which is
+    worse than not calling it because the code would then claim a property it does
+    not have.
+  - Three ways forward, and this needs a decision before implementing:
+    1. **Separate connections per traffic class.** Two Steam connections give two
+       independent reliability streams, so control retransmits cannot delay
+       movement. No lane support needed, and the transport is already described as
+       owning "a separate Steam Networking Sockets prediction plane", so the shape
+       is not foreign to the design. Recommended — it is the only option that works
+       with the binding as shipped.
+    2. **Extend the binding** to pass a lane index through `sendMessages`. Correct
+       and wire-efficient (Valve notes lane 0 should carry the most common traffic
+       because other lanes cost a little on the wire), but it means carrying a
+       patched addon.
+    3. Wait for upstream. Not viable on a playtest timeline.
+  - Worth noting the shape of this finding: the capability exists in Steam, and is
+    even half-exposed in the binding. Checking only that `configureConnectionLanes`
+    was available would have produced code that compiles, runs, reports success, and
+    silently does nothing.
 
 #### The lens this revision came from
 
